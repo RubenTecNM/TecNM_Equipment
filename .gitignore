@@ -1,0 +1,98 @@
+# ==========================================
+# .NET
+# ==========================================
+**/bin/
+**/obj/
+*.user
+*.suo
+appsettings.Local.json
+appsettings.*.Local.json
+
+# ==========================================
+# Node.js / Frontend
+# ==========================================
+**/node_modules/
+**/dist/
+**/build/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==========================================
+# Variables de entorno / secretos
+# ==========================================
+.env
+.env.*
+!.env.example
+
+# ==========================================
+# Archivos almacenados por la aplicación
+# ==========================================
+backend/storage/documents/*
+!backend/storage/documents/.gitkeep
+
+# ==========================================
+# Respaldos, volcados y material criptográfico local
+# ==========================================
+*.bak
+*.dump
+*.sqlite
+*.sqlite3
+*.pfx
+*.pem
+*.key
+*.p12
+
+# ==========================================
+# Logs y resultados de pruebas/cobertura
+# ==========================================
+*.log
+logs/
+coverage/
+TestResults/
+*.trx
+*.coverage
+
+# ==========================================
+# IDE / Editores
+# ==========================================
+.vscode/
+.idea/
+.vs/
+.opencode/
+.obsidian/
+.microsoft/
+*.swp
+*.swo
+
+# ==========================================
+# Sistema operativo
+# ==========================================
+.DS_Store
+Thumbs.db
+
+# ==========================================
+# Carpetas de herramientas de agentes (las genera el CLI de skills)
+# ==========================================
+/.agents/
+/.aider-desk/
+/.claude/skills/
+/.codestudio/
+/.commandcode/
+/.continue/
+/.cortex/
+/.crush/
+/.goose/
+/.hermes/
+/.inferencesh/
+/.kimchi/
+/.kode/
+/.minimax/
+/.pochi/
+/.terramind/
+/.trae/
+/.vibe/
+/.zcode/
+/skills/
+/skills-lock.json

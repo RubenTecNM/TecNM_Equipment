@@ -1,0 +1,24 @@
+# Configuración de gitleaks para TecNM Inventario.
+# Se ejecuta en el hook .githooks/pre-commit y en .github/workflows/security.yml.
+#
+# La allowlist es deliberadamente mínima: solo plantillas sin valores reales y
+# los literales de prueba del repositorio. No añadas rutas amplias aquí.
+
+title = "TecNM Inventario — escaneo de secretos"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Plantillas .env sin valores reales y literales de prueba conocidos"
+paths = [
+  '''^backend/\.env\.example$''',
+  '''^frontend/\.env\.example$''',
+  '''^database/\.env\.example$''',
+]
+regexes = [
+  '''password123''',
+  '''ClaveSegura123!''',
+  '''correct-password''',
+  '''secret123''',
+]

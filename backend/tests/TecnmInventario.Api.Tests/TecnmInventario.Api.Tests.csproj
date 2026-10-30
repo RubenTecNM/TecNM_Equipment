@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\TecnmInventario.Api.csproj" />
+  </ItemGroup>
+
+  <!--
+    Los scripts SQL se enlazan desde el repo y se copian al directorio de
+    salida. El fixture los lee desde AppContext.BaseDirectory/Sql: así no hay
+    que buscar la raíz del repositorio en tiempo de ejecución (los tests
+    pueden correr desde bin/ o desde un paquete de resultados).
+  -->
+  <ItemGroup>
+    <Content Include="..\..\..\database.sql" Link="Sql\database.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\seed-database.sql" Link="Sql\seed-database.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\seed-permissions.sql" Link="Sql\seed-permissions.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\seed-documents.sql" Link="Sql\seed-documents.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\add-procurement-permission.sql" Link="Sql\add-procurement-permission.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\add-incidents-permissions.sql" Link="Sql\add-incidents-permissions.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\seed-users-view-permission.sql" Link="Sql\seed-users-view-permission.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\add-auth-sessions.sql" Link="Sql\add-auth-sessions.sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

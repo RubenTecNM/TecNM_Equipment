@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+# Hook de pre-commit: escanea con gitleaks los cambios que se van a commitear.
+#
+# El control que bloquea de verdad es el workflow de CI (.github/workflows/security.yml).
+# Si gitleaks no está instalado en local, se avisa y se deja pasar el commit.
+#
+# Activar el hook (una vez por clon):
+#   git config core.hooksPath .githooks
+set -eu
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "" >&2
+  echo "AVISO: gitleaks NO está instalado; se omite el escaneo de secretos." >&2
+  echo "       Instálalo desde https://github.com/gitleaks/gitleaks" >&2
+  echo "       El CI sí ejecuta el escaneo y bloquea la fusión." >&2
+  echo "" >&2
+  exit 0
+fi
+
+exec gitleaks git --staged --redact --no-banner --config .gitleaks.toml

@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/*
+ * Tokens de diseño: blanco con azul institucional (TecNM).
+ * Navy #1B396A para identidad y texto de marca; azul de acción #1F5FD1
+ * para enlaces, foco y estados interactivos. Flat, sin sombras: la
+ * jerarquía la dan los tintes azulados y los bordes.
+ */
+@theme {
+  --font-display: "Lexend", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Source Sans 3", ui-sans-serif, system-ui, sans-serif;
+
+  --color-primary: #1b396a;
+  --color-on-primary: #ffffff;
+  --color-secondary: #2a4a80;
+  --color-accent: #1f5fd1;
+  --color-on-accent: #ffffff;
+  --color-success: #1e7b4f;
+  --color-background: #f5f8fc;
+  --color-foreground: #0e1f3a;
+  --color-card: #ffffff;
+  --color-card-foreground: #0e1f3a;
+  --color-muted: #eaf0f8;
+  --color-muted-foreground: #4a5b76;
+  --color-border: #d6e0ed;
+  --color-destructive: #c62828;
+  --color-on-destructive: #ffffff;
+  --color-ring: #1f5fd1;
+
+  --default-border-color: var(--color-border);
+}
+
+body {
+  @apply bg-background font-sans text-foreground antialiased;
+}
+
+/* Anillo de enfoque siempre visible para navegación por teclado */
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Diálogo nativo del UI kit (UiModal): sin estilos UA por defecto,
+   borde y fondo con los tokens del tema */
+dialog.ui-modal {
+  border: 1px solid var(--color-border);
+  border-radius: 0.5rem;
+  background-color: var(--color-card);
+  color: var(--color-foreground);
+  padding: 1.25rem;
+  width: min(28rem, calc(100% - 2rem));
+  margin: auto;
+}
+
+dialog.ui-modal::backdrop {
+  background-color: color-mix(in srgb, var(--color-foreground) 45%, transparent);
+}
+
+/* Única animación de entrada: la etiqueta de inventario del login. */
+@keyframes tag-settle {
+  from {
+    opacity: 0;
+    transform: translateY(16px) rotate(-1deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(-4deg);
+  }
+}
+
+.asset-tag {
+  transform: rotate(-4deg);
+  animation: tag-settle 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}

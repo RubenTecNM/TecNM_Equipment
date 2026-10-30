@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="TecnmInventario.Api.csproj" />
+  <Folder Name="/tests/">
+    <Project Path="tests/TecnmInventario.Api.Tests/TecnmInventario.Api.Tests.csproj" />
+  </Folder>
+</Solution>

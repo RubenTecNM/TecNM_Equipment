@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: tecnm_inventario_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tecnm_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?la variable POSTGRES_PASSWORD es obligatoria}
+      POSTGRES_DB: ${POSTGRES_DB:-tecnm_inventario}
+    ports:
+      # Solo loopback: la BD de desarrollo no debe quedar expuesta a la red.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - tecnm_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  tecnm_pgdata:
