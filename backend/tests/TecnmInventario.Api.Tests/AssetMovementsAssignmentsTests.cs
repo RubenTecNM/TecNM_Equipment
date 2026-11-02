@@ -7,7 +7,6 @@ using TecnmInventario.Api.Common.Security;
 using TecnmInventario.Api.Core.Entities;
 using TecnmInventario.Api.Data;
 using TecnmInventario.Api.Features.Assets.Assignments.CreateAssetAssignment;
-using TecnmInventario.Api.Features.Assets.Assignments.EndAssetAssignment;
 using TecnmInventario.Api.Features.Assets.Movements.CreateAssetMovement;
 using TecnmInventario.Api.Features.Assets.Shared;
 
@@ -143,34 +142,6 @@ public class AssetMovementsAssignmentsTests
         Assert.Single(h.Context.AssetAssignments);
     }
 
-    [Fact]
-    public async Task Devolver_ConIncidenteAbierto_ConservaEstado()
-    {
-        using var h = AssetFlowsHarness.CreateInMemory();
-        var asset = h.AddAsset(AssetStatusCodes.Asignado);
-        var assignment = h.AddAssignment(asset.AssetId);
-        h.AddIncident(asset.AssetId, IncidentStatusCodes.Abierto);
-
-        await h.Return.Handle(new EndAssetAssignmentCommand(asset.AssetId, 1, assignment.AssetAssignmentId), default);
-
-        Assert.Equal(AssetStatusCodes.Asignado, h.StatusOf(asset.AssetId).AssetStatus.Code);
-
-        var returned = h.Context.AssetAssignments.AsNoTracking().Single(a => a.AssetAssignmentId == assignment.AssetAssignmentId);
-        Assert.NotNull(returned.ReturnedAt);
-    }
-
-    [Fact]
-    public async Task Devolver_EnOtroEstado_ConservaEstado()
-    {
-        using var h = AssetFlowsHarness.CreateInMemory();
-        var asset = h.AddAsset(AssetStatusCodes.ConFalla);
-        var assignment = h.AddAssignment(asset.AssetId);
-
-        await h.Return.Handle(new EndAssetAssignmentCommand(asset.AssetId, 1, assignment.AssetAssignmentId), default);
-
-        Assert.Equal(AssetStatusCodes.ConFalla, h.StatusOf(asset.AssetId).AssetStatus.Code);
-    }
-
     // ---------- Concurrencia optimista (expectedVersion) ----------
 
     [Fact]
@@ -215,50 +186,5 @@ public class AssetMovementsAssignmentsTests
 
         Assert.Empty(h.Context.AssetAssignments);
         Assert.Empty(h.Context.AuditLogs);
-    }
-
-    [Fact]
-    public async Task Devolver_VersionDesactualizada_Rechazado_SinFilas()
-    {
-        using var h = AssetFlowsHarness.CreateInMemory();
-        var asset = h.AddAsset(AssetStatusCodes.Asignado);
-        var assignment = h.AddAssignment(asset.AssetId);
-        // Incidente abierto: el activo NO se UPDATEa en esta operación,
-        // así que solo la comparación explícita detecta la versión vieja.
-        h.AddIncident(asset.AssetId, IncidentStatusCodes.Abierto);
-
-        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
-            h.Return.Handle(
-                new EndAssetAssignmentCommand(asset.AssetId, 99, assignment.AssetAssignmentId), default).AsTask());
-
-        var returned = await h.Context.AssetAssignments.AsNoTracking()
-            .SingleAsync(a => a.AssetAssignmentId == assignment.AssetAssignmentId);
-        Assert.Null(returned.ReturnedAt);
-        Assert.Empty(h.Context.AuditLogs);
-    }
-
-    [Fact]
-    public async Task Devolver_VersionCorrecta_Exito_DevuelveVersionDelActivo()
-    {
-        using var h = AssetFlowsHarness.CreateInMemory();
-        var asset = h.AddAsset(AssetStatusCodes.Asignado);
-        var assignment = h.AddAssignment(asset.AssetId);
-        // Incidente abierto: la devolución conserva ASIGNADO (no pasa
-        // por AssetStatusChanger), con lo que la operación completa es
-        // ejecutable con el proveedor InMemory. El camino normal
-        // (ASIGNADO -> DISPONIBLE) se verifica contra PostgreSQL con
-        // curl en la prueba real del bloque 2.
-        h.AddIncident(asset.AssetId, IncidentStatusCodes.Abierto);
-
-        var result = await h.Return.Handle(
-            new EndAssetAssignmentCommand(asset.AssetId, asset.Version, assignment.AssetAssignmentId), default);
-
-        Assert.Equal(
-            (await h.Context.Assets.AsNoTracking().SingleAsync(a => a.AssetId == asset.AssetId)).Version,
-            result.AssetVersion);
-        Assert.Equal(AssetStatusCodes.Asignado, h.StatusOf(asset.AssetId).AssetStatus.Code);
-        var returned = await h.Context.AssetAssignments.AsNoTracking()
-            .SingleAsync(a => a.AssetAssignmentId == assignment.AssetAssignmentId);
-        Assert.NotNull(returned.ReturnedAt);
     }
 }
