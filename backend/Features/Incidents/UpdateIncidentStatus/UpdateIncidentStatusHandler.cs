@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TecnmInventario.Api.Common.Audit;
 using TecnmInventario.Api.Common.Domain;
 using TecnmInventario.Api.Common.Errors;
+using TecnmInventario.Api.Common.Persistence;
 using TecnmInventario.Api.Common.Security;
 using TecnmInventario.Api.Features.Assets.Shared;
 using TecnmInventario.Api.Features.Incidents.Shared;
@@ -49,38 +50,50 @@ public sealed class UpdateIncidentStatusHandler
                 $"Transición de estado de incidente no permitida: {currentCode} -> {command.NewStatusCode}.");
         }
 
-        var assetStatusCode = incident.Asset.AssetStatus.Code;
         var startsRepair = command.NewStatusCode == IncidentStatusCodes.EnReparacion;
-
-        if (startsRepair && assetStatusCode == AssetStatusCodes.DadoDeBaja)
-        {
-            throw new BusinessRuleViolationException(
-                "No se puede iniciar la reparación de un activo dado de baja.");
-        }
 
         var newStatusId = await _context.IncidentStatuses
             .Where(s => s.Code == command.NewStatusCode && !s.IsDeleted)
             .Select(s => s.IncidentStatusId)
             .FirstAsync(cancellationToken);
 
-        _context.Entry(incident).Property(i => i.Version).OriginalValue = command.ExpectedVersion;
-        incident.IncidentStatusId = newStatusId;
-        incident.UpdatedBy = userId;
-
         // Transacción explícita: incidente + (opcional) cambio de estado del activo
         // + filas de audit_log se confirman juntos o ninguno.
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        // El activo es SIEMPRE el primer lock, antes de tocar el incidente.
+        var lockedAsset = await AssetRowLock.LockAsync(_context, incident.AssetId, cancellationToken);
+        var asset = incident.Asset;
+        await _context.Entry(asset).ReloadAsync(cancellationToken);
+        await _context.Entry(incident).ReloadAsync(cancellationToken);
+
+        // Concurrencia optimista contra la versión fresca, tras el lock.
+        if (incident.Version != command.ExpectedVersion)
+        {
+            throw new DbUpdateConcurrencyException(
+                "El incidente fue modificado por otro usuario mientras tanto.");
+        }
+
+        if (startsRepair && lockedAsset.AssetStatusCode == AssetStatusCodes.DadoDeBaja)
+        {
+            throw new BusinessRuleViolationException(
+                "No se puede iniciar la reparación de un activo dado de baja.");
+        }
+
+        incident.IncidentStatusId = newStatusId;
+        incident.UpdatedBy = userId;
 
         await _context.SaveChangesAsync(cancellationToken);
         await _context.Entry(incident).ReloadAsync(cancellationToken);
 
         // Iniciar la reparación saca al activo de circulación (EN_MANTENIMIENTO);
         // si ya está ahí no se toca. Las demás transiciones no afectan al activo.
-        var finalAssetStatus = assetStatusCode;
-        if (startsRepair && assetStatusCode != AssetStatusCodes.EnMantenimiento)
+        // El estado se evalúa con la fila ya bloqueada, no con el cargado antes.
+        var finalAssetStatus = lockedAsset.AssetStatusCode;
+        if (startsRepair && lockedAsset.AssetStatusCode != AssetStatusCodes.EnMantenimiento)
         {
             var change = await _assetStatusChanger.ChangeAsync(
-                incident.Asset,
+                asset,
                 AssetStatusCodes.EnMantenimiento,
                 $"Incidente #{incident.IncidentId} en reparación",
                 cancellationToken);

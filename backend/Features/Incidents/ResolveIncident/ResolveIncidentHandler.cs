@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TecnmInventario.Api.Common.Audit;
 using TecnmInventario.Api.Common.Domain;
 using TecnmInventario.Api.Common.Errors;
+using TecnmInventario.Api.Common.Persistence;
 using TecnmInventario.Api.Common.Security;
 using TecnmInventario.Api.Features.Assets.Shared;
 using TecnmInventario.Api.Data;
@@ -54,7 +55,26 @@ public sealed class ResolveIncidentHandler : ICommandHandler<ResolveIncidentComm
         var solution = command.Solution.Trim();
         var diagnosis = string.IsNullOrWhiteSpace(command.Diagnosis) ? null : command.Diagnosis.Trim();
 
-        _context.Entry(incident).Property(i => i.Version).OriginalValue = command.ExpectedVersion;
+        // Transacción explícita: la resolución del incidente, la liberación del
+        // activo (uno o dos saltos) y todas las filas de audit_log son atómicas.
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        // El activo es SIEMPRE el primer lock de la transacción. Se toma antes
+        // de tocar el incidente para que dos resoluciones concurrentes no
+        // cuenten incidentes abiertos con datos que la otra aún no confirmó.
+        var lockedAsset = await AssetRowLock.LockAsync(_context, incident.AssetId, cancellationToken);
+        var asset = incident.Asset;
+        await _context.Entry(asset).ReloadAsync(cancellationToken);
+        await _context.Entry(incident).ReloadAsync(cancellationToken);
+
+        // Concurrencia optimista: comparar contra la versión fresca DESPUÉS del
+        // lock, antes de mutar. No se sobrescribe el valor original sin comparar.
+        if (incident.Version != command.ExpectedVersion)
+        {
+            throw new DbUpdateConcurrencyException(
+                "El incidente fue modificado por otro usuario mientras tanto.");
+        }
+
         incident.IncidentStatusId = resolvedStatusId;
         incident.Solution = solution;
         if (diagnosis is not null)
@@ -64,15 +84,11 @@ public sealed class ResolveIncidentHandler : ICommandHandler<ResolveIncidentComm
         incident.ResolvedAt = DateTime.UtcNow;
         incident.UpdatedBy = userId;
 
-        // Transacción explícita: la resolución del incidente, la liberación del
-        // activo (uno o dos saltos) y todas las filas de audit_log son atómicas.
-        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-
         await _context.SaveChangesAsync(cancellationToken);
         await _context.Entry(incident).ReloadAsync(cancellationToken);
 
-        var asset = incident.Asset;
-        var assetStatusCode = asset.AssetStatus.Code;
+        // Estado recalculado después del lock (no el cargado antes de la tx).
+        var assetStatusCode = lockedAsset.AssetStatusCode;
 
         // El activo no se libera mientras quede otro incidente abierto sobre él.
         var openCodes = IncidentStatusCodes.Open.ToArray();

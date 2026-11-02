@@ -46,6 +46,11 @@ movimientos, incidentes, mantenimiento, baja formal, auditoría). Idioma de trab
 16. **Los snapshots de auditoría son proyecciones explícitas; nunca incluyen secretos**
     (`password_hash`, tokens, claves de licencia).
 17. **Build y test siempre con `backend/TecnmInventario.slnx`.**
+19. **Todo handler que cambie el estado de un activo en función de otras filas (incidentes, asignaciones)
+    debe abrir su transacción, tomar `AssetRowLock.LockAsync` sobre el activo PRIMERO, recargar el activo,
+    comparar `ExpectedVersion` con la versión fresca y solo entonces contar, decidir y mutar.
+    El activo es siempre el primer lock. Es una excepción deliberada a la regla 13: estos handlers
+    gestionan su propia transacción y no implementan `ITransactionalCommand`.**
 
 ## Seguridad del repositorio
 18. **Nunca commitear secretos, archivos `.env`, rutas absolutas ni datos personales.**

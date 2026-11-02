@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TecnmInventario.Api.Common.Audit;
 using TecnmInventario.Api.Common.Domain;
 using TecnmInventario.Api.Common.Errors;
+using TecnmInventario.Api.Common.Persistence;
 using TecnmInventario.Api.Common.Security;
 using TecnmInventario.Api.Data;
 
@@ -37,7 +38,25 @@ public sealed class UpdateAssetStatusHandler : ICommandHandler<UpdateAssetStatus
         var newStatus = await _context.AssetStatuses
             .FirstAsync(s => s.Code == command.NewStatusCode && !s.IsDeleted, cancellationToken);
 
-        var previousStatusCode = asset.AssetStatus.Code;
+        // Transacción explícita: el cambio de estado y su registro en
+        // audit_log deben ser atómicos (todo o nada). Sin esto, si el
+        // INSERT en audit_log falla por cualquier razón, el UPDATE del
+        // activo ya quedaría confirmado en la BD sin dejar rastro de
+        // auditoría -- justo lo que esto existe para evitar.
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        // El activo es SIEMPRE el primer lock. La comprobación de incidentes
+        // abiertos se hace DESPUÉS del lock: antes se hacía fuera de la
+        // transacción y una alta concurrente de incidente podía colarse.
+        var lockedAsset = await AssetRowLock.LockAsync(_context, asset.AssetId, cancellationToken);
+        await _context.Entry(asset).ReloadAsync(cancellationToken);
+
+        // Concurrencia optimista contra la versión fresca, tras el lock.
+        if (asset.Version != command.ExpectedVersion)
+        {
+            throw new DbUpdateConcurrencyException(
+                "El activo fue modificado por otro usuario mientras tanto.");
+        }
 
         // Un activo con incidentes abiertos no puede volver a circular. Sin esta
         // regla se podría pasar a DISPONIBLE/ASIGNADO por este endpoint (via
@@ -57,17 +76,8 @@ public sealed class UpdateAssetStatusHandler : ICommandHandler<UpdateAssetStatus
             }
         }
 
-        _context.Entry(asset).Property(a => a.Version).OriginalValue = command.ExpectedVersion;
-
         asset.AssetStatusId = newStatus.AssetStatusId;
         asset.UpdatedBy = _currentUser.UserId;
-
-        // Transacción explícita: el cambio de estado y su registro en
-        // audit_log deben ser atómicos (todo o nada). Sin esto, si el
-        // INSERT en audit_log falla por cualquier razón, el UPDATE del
-        // activo ya quedaría confirmado en la BD sin dejar rastro de
-        // auditoría -- justo lo que esto existe para evitar.
-        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
         await _context.Entry(asset).ReloadAsync(cancellationToken);
@@ -79,7 +89,7 @@ public sealed class UpdateAssetStatusHandler : ICommandHandler<UpdateAssetStatus
             tableName: "assets",
             recordId: asset.AssetId,
             action: "UPDATE",
-            oldData: new { Status = previousStatusCode },
+            oldData: new { Status = lockedAsset.AssetStatusCode },
             newData: new { Status = command.NewStatusCode, command.Reason },
             cancellationToken);
 

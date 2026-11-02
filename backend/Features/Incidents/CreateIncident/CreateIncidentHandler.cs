@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using TecnmInventario.Api.Common.Audit;
 using TecnmInventario.Api.Common.Domain;
 using TecnmInventario.Api.Common.Errors;
+using TecnmInventario.Api.Common.Persistence;
 using TecnmInventario.Api.Common.Security;
 using TecnmInventario.Api.Features.Assets.Shared;
 using TecnmInventario.Api.Data;
@@ -39,14 +40,6 @@ public sealed class CreateIncidentHandler : ICommandHandler<CreateIncidentComman
             .FirstOrDefaultAsync(a => a.AssetId == command.AssetId && !a.IsDeleted, cancellationToken)
             ?? throw new KeyNotFoundException("El activo solicitado no existe.");
 
-        var assetStatusCode = asset.AssetStatus.Code;
-
-        if (assetStatusCode == AssetStatusCodes.DadoDeBaja)
-        {
-            throw new BusinessRuleViolationException(
-                "No se puede reportar un incidente sobre un activo dado de baja.");
-        }
-
         var openStatusId = await _context.IncidentStatuses
             .Where(s => s.Code == IncidentStatusCodes.Abierto && !s.IsDeleted)
             .Select(s => s.IncidentStatusId)
@@ -55,6 +48,18 @@ public sealed class CreateIncidentHandler : ICommandHandler<CreateIncidentComman
         // Transacción explícita: incidente + cambio de estado del activo +
         // filas de audit_log deben confirmarse juntos o ninguno.
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        // El activo es SIEMPRE el primer lock. Se bloquea antes de insertar el
+        // incidente para que una resolución concurrente no cuente incidentes
+        // abiertos sin ver este, ni este handler decida con un estado viejo.
+        var lockedAsset = await AssetRowLock.LockAsync(_context, asset.AssetId, cancellationToken);
+        await _context.Entry(asset).ReloadAsync(cancellationToken);
+
+        if (lockedAsset.AssetStatusCode == AssetStatusCodes.DadoDeBaja)
+        {
+            throw new BusinessRuleViolationException(
+                "No se puede reportar un incidente sobre un activo dado de baja.");
+        }
 
         var incident = new Incident
         {
@@ -72,9 +77,10 @@ public sealed class CreateIncidentHandler : ICommandHandler<CreateIncidentComman
         await _context.SaveChangesAsync(cancellationToken);
 
         // Solo un activo operativo pasa a CON_FALLA. Si ya estaba CON_FALLA o
-        // EN_MANTENIMIENTO (ya fuera de servicio) no se toca su estado.
-        var finalAssetStatus = assetStatusCode;
-        if (assetStatusCode is AssetStatusCodes.Disponible or AssetStatusCodes.Asignado)
+        // EN_MANTENIMIENTO (ya fuera de servicio) no se toca su estado. El
+        // estado se evalúa con la fila ya bloqueada, no con el cargado antes.
+        var finalAssetStatus = lockedAsset.AssetStatusCode;
+        if (finalAssetStatus is AssetStatusCodes.Disponible or AssetStatusCodes.Asignado)
         {
             var change = await _assetStatusChanger.ChangeAsync(
                 asset,
