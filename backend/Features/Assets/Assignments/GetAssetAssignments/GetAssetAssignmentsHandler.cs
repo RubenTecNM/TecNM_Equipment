@@ -17,23 +17,25 @@ public sealed class GetAssetAssignmentsHandler
     public async ValueTask<IReadOnlyList<GetAssetAssignmentsResponse>> Handle(
         GetAssetAssignmentsQuery query, CancellationToken cancellationToken)
     {
+        // A6: el historial se devuelve aunque el activo esté borrado lógicamente.
         var assetExists = await _context.Assets
-            .AnyAsync(a => a.AssetId == query.AssetId && !a.IsDeleted, cancellationToken);
+            .IgnoreQueryFilters(["SoftDelete"])
+            .AnyAsync(a => a.AssetId == query.AssetId, cancellationToken);
 
         if (!assetExists)
         {
             throw new KeyNotFoundException("El activo solicitado no existe.");
         }
 
-        // Sin paginar a propósito: el historial de asignaciones de un
-        // activo es corto; las últimas 50 alcanzan para la ficha.
+        // D3: el historial de asignaciones es inmutable; la ubicación borrada
+        // lógicamente debe seguir apareciendo con su nombre original.
+        // IgnoreQueryFilters aplica a toda la query, incluidas las navegaciones.
+        // Sin paginar a propósito: el historial de un activo es corto; las últimas 50 alcanzan.
         return await _context.AssetAssignments
+            .IgnoreQueryFilters(["SoftDelete"])
             .Where(a => a.AssetId == query.AssetId)
             .OrderByDescending(a => a.AssignedAt)
             .Take(50)
-            .Include(a => a.AssignedToNavigation)
-            .Include(a => a.AssignmentType)
-            .Include(a => a.Location)
             .Select(a => new GetAssetAssignmentsResponse(
                 a.AssetAssignmentId,
                 a.AssignedTo,

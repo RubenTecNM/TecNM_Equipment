@@ -39,6 +39,17 @@ public class ExceptionHandlingMiddleware
                 ex.Message,
                 ex.Errors);
         }
+        catch (Common.Errors.ReferenceInUseException ex)
+        {
+            // Recurso referenciado por otras filas activas: borrar o reemplazar
+            // violaría la integridad del historial. HTTP 409 (en uso ≠ mal formado).
+            _logger.LogWarning("Recurso en uso en {Path}: {Reason}", context.Request.Path, ex.Message);
+            await WriteProblemDetailsAsync(
+                context,
+                HttpStatusCode.Conflict,
+                "Recurso en uso",
+                ex.Message);
+        }
         catch (Common.Errors.BusinessRuleViolationException ex)
         {
             // Regla de negocio dependiente del estado actual de los datos

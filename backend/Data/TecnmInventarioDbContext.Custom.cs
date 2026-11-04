@@ -12,8 +12,54 @@ public partial class TecnmInventarioDbContext
 
     public virtual DbSet<UserExternalLogin> UserExternalLogins { get; set; }
 
+    // Entidades con is_deleted pendientes de recibir el filtro "SoftDelete"
+    // (fases 4b/c/d). Cuando la lista quede vacía, Guardian_ListaDePendientesVacia pasa.
+    // ⚠ No eliminar esta lista hasta que todos los filtros estén aplicados.
+    public static readonly IReadOnlySet<string> SoftDeletePendingPhase =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            // fase 4b — activo y subentidades
+            "Asset",
+            "AssetComponent",
+            "AssetOsHistory",
+            "AssetService",
+            "AssetSoftware",
+            "AssetSpecification",
+            "MaintenanceRecord",
+            "NetworkInterface",
+            "Manufacturer",
+            "Model",
+            "Software",
+            "SoftwareLicense",
+            "BuildingSetting",
+            // fase 4c — catálogos
+            "AssetStatus",
+            "AssetType",
+            "AssignmentType",
+            "ComponentType",
+            "DisposalReason",
+            "IncidentPriority",
+            "IncidentStatus",
+            "IncidentType",
+            "LicenseType",
+            "LocationType",
+            "MaintenanceType",
+            "MovementReason",
+            "RelationType",
+            "Service",
+            "SoftwareType",
+            // fase 4d — seguridad
+            "AppUser",
+            "Role",
+            "Permission",
+        };
+
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
     {
+        // Los filtros de soft-delete viven aquí y sobreviven a un re-scaffold
+        // del archivo generado (TecnmInventarioDbContext.cs).
+        ConfigureSoftDeleteFilters(modelBuilder);
+
         modelBuilder.Entity<RefreshToken>(entity =>
         {
             entity.HasKey(e => e.RefreshTokenId);
@@ -62,6 +108,47 @@ public partial class TecnmInventarioDbContext
             var versionProp = entityType.FindProperty("Version");
             if (versionProp is not null && versionProp.ClrType == typeof(int))
                 versionProp.IsConcurrencyToken = true;
+        }
+    }
+
+    private static void ConfigureSoftDeleteFilters(ModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            var isDeletedProp = entityType.FindProperty("IsDeleted");
+            if (isDeletedProp is null)
+                continue;
+
+            var filters = entityType.GetDeclaredQueryFilters().ToList();
+
+            // Un filtro sin nombre (IsAnonymous=true) no puede ignorarse con
+            // IgnoreQueryFilters(["SoftDelete"]) y reintroduciría el bug sin que
+            // el guardián lo detecte. Fallar en la construcción del modelo fuerza
+            // a que el desarrollador lo migre a HasQueryFilter("SoftDelete", ...).
+            var anonymous = filters.Where(f => f.IsAnonymous).ToList();
+            if (anonymous.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"La entidad '{entityType.ClrType.Name}' tiene {anonymous.Count} filtro(s) " +
+                    $"sin nombre (IsAnonymous=true). Todos los filtros de soft-delete deben " +
+                    $"declararse con HasQueryFilter(\"SoftDelete\", ...) para ser ignorables " +
+                    $"por nombre. Muévelos a TecnmInventarioDbContext.Custom.cs.");
+            }
+
+            // Si ya tiene el filtro nombrado "SoftDelete", no hace falta nada más.
+            if (filters.Any(f => !f.IsAnonymous))
+                continue;
+
+            if (SoftDeletePendingPhase.Contains(entityType.ClrType.Name))
+                continue;
+
+            var clrType = entityType.ClrType;
+            var param = System.Linq.Expressions.Expression.Parameter(clrType, "e");
+            var body = System.Linq.Expressions.Expression.Not(
+                System.Linq.Expressions.Expression.Property(param, "IsDeleted"));
+            var lambda = System.Linq.Expressions.Expression.Lambda(body, param);
+
+            modelBuilder.Entity(clrType).HasQueryFilter("SoftDelete", lambda);
         }
     }
 }
