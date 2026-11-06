@@ -101,6 +101,66 @@ public sealed class SoftDeleteGuardianTests
         Assert.Contains("IsAnonymous=true", ex.Message);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Guardián de relaciones requeridas (fase 4b.2, paso E).
+    // Recorre el modelo y lista toda FK con IsRequired=true cuyo principal
+    // tenga el filtro "SoftDelete". EF convierte el Include/Select en INNER
+    // JOIN para esa relación; si el principal está borrado lógicamente, la
+    // fila del dependiente desaparece ENTERA de la consulta (D3), salvo que
+    // el handler use IgnoreQueryFilters(["SoftDelete"]) + Where explícito
+    // sobre la raíz (D2). Toda relación nueva en la lista exige revisar sus
+    // consultas de historial por el mismo motivo.
+    // ─────────────────────────────────────────────────────────────────────────
+    [Fact]
+    public void Guardian_RelacionesRequeridasHaciaPrincipalesConSoftDelete()
+    {
+        var aprobadas = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "AcquisitionAsset.AcquisitionId -> Acquisition",
+            "AcquisitionAsset.AssetId -> Asset",
+            "AssetAssignment.AssetId -> Asset",
+            "AssetComponent.AssetId -> Asset",
+            "AssetDisposal.AssetId -> Asset",
+            "AssetMovement.AssetId -> Asset",
+            "AssetMovement.ToLocationId -> Location",
+            "AssetOsHistory.AssetId -> Asset",
+            "AssetRelation.PrimaryAssetId -> Asset",
+            "AssetRelation.RelatedAssetId -> Asset",
+            "AssetService.AssetId -> Asset",
+            "AssetSoftware.AssetId -> Asset",
+            "AssetSoftware.SoftwareId -> Software",
+            "AssetSpecification.AssetId -> Asset",
+            "AssetWarranty.AssetId -> Asset",
+            "BuildingSetting.LocationId -> Location",
+            "Incident.AssetId -> Asset",
+            "InventoryRecord.AssetId -> Asset",
+            "MaintenanceRecord.AssetId -> Asset",
+            "NetworkInterface.AssetId -> Asset",
+            "SoftwareLicense.SoftwareId -> Software",
+            "SoftwareLicenseAssignment.AssetId -> Asset",
+            "SoftwareLicenseAssignment.LicenseId -> SoftwareLicense",
+        };
+
+        using var context = BuildInMemoryContext();
+        var actuales = context.Model.GetEntityTypes()
+            .SelectMany(e => e.GetForeignKeys())
+            .Where(fk => fk.IsRequired)
+            .Where(fk => fk.PrincipalEntityType.GetDeclaredQueryFilters()
+                .Any(f => !f.IsAnonymous && f.Key == "SoftDelete"))
+            .Select(fk =>
+                $"{fk.DeclaringEntityType.ClrType.Name}.{string.Join(",", fk.Properties.Select(p => p.Name))} -> {fk.PrincipalEntityType.ClrType.Name}")
+            .ToHashSet(StringComparer.Ordinal);
+
+        var nuevas = actuales.Except(aprobadas).OrderBy(x => x).ToList();
+        var desaparecidas = aprobadas.Except(actuales).OrderBy(x => x).ToList();
+
+        Assert.True(
+            nuevas.Count == 0 && desaparecidas.Count == 0,
+            $"Relaciones nuevas no aprobadas (revisar sus consultas de historial, INNER JOIN oculta filas): " +
+            $"[{string.Join(", ", nuevas)}]. " +
+            $"Relaciones aprobadas que desaparecieron del modelo: [{string.Join(", ", desaparecidas)}].");
+    }
+
     private static TecnmInventarioDbContext BuildInMemoryContext()
     {
         var options = new DbContextOptionsBuilder<TecnmInventarioDbContext>()

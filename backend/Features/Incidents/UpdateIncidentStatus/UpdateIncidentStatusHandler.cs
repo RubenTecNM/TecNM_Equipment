@@ -36,7 +36,14 @@ public sealed class UpdateIncidentStatusHandler
     {
         var userId = _currentUser.UserId ?? throw new UnauthorizedAccessException();
 
+        // D4/D3: Incident.Asset es una navegación requerida; sin ignorar el
+        // filtro "SoftDelete" de Asset, el incidente entero desaparecería de
+        // esta consulta si su activo está borrado lógicamente. El Where
+        // explícito sobre la raíz compensa que IgnoreQueryFilters también
+        // quita el filtro propio de Incident (D2).
         var incident = await _context.Incidents
+            .IgnoreQueryFilters(["SoftDelete"])
+            .Where(i => !i.IsDeleted)
             .Include(i => i.IncidentStatus)
             .Include(i => i.Asset).ThenInclude(a => a.AssetStatus)
             .FirstOrDefaultAsync(i => i.IncidentId == command.IncidentId, cancellationToken)
@@ -66,6 +73,15 @@ public sealed class UpdateIncidentStatusHandler
         var asset = incident.Asset;
         await _context.Entry(asset).ReloadAsync(cancellationToken);
         await _context.Entry(incident).ReloadAsync(cancellationToken);
+
+        // D4: el guard va DESPUÉS del lock y del reload, nunca antes, para
+        // no crear una carrera entre la comprobación y el bloqueo de la fila.
+        if (asset.IsDeleted)
+        {
+            throw new BusinessRuleViolationException(
+                $"No se puede cambiar el estado del incidente #{incident.IncidentId}: " +
+                $"el activo #{incident.AssetId} está eliminado lógicamente.");
+        }
 
         // Concurrencia optimista contra la versión fresca, tras el lock.
         if (incident.Version != command.ExpectedVersion)

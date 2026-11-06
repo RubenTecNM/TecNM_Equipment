@@ -13,25 +13,11 @@ public partial class TecnmInventarioDbContext
     public virtual DbSet<UserExternalLogin> UserExternalLogins { get; set; }
 
     // Entidades con is_deleted pendientes de recibir el filtro "SoftDelete"
-    // (fases 4b/c/d). Cuando la lista quede vacía, Guardian_ListaDePendientesVacia pasa.
+    // (fases 4c/d). Cuando la lista quede vacía, Guardian_ListaDePendientesVacia pasa.
     // ⚠ No eliminar esta lista hasta que todos los filtros estén aplicados.
     public static readonly IReadOnlySet<string> SoftDeletePendingPhase =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            // fase 4b — activo y subentidades
-            "Asset",
-            "AssetComponent",
-            "AssetOsHistory",
-            "AssetService",
-            "AssetSoftware",
-            "AssetSpecification",
-            "MaintenanceRecord",
-            "NetworkInterface",
-            "Manufacturer",
-            "Model",
-            "Software",
-            "SoftwareLicense",
-            "BuildingSetting",
             // fase 4c — catálogos
             "AssetStatus",
             "AssetType",

@@ -30,8 +30,15 @@ public sealed class GetIncidentsHandler
             }
         }
 
-        // El filtro global de Incident ya excluye los eliminados lógicamente.
-        var incidents = _context.Incidents.AsQueryable();
+        // D3: el listado es historial y no debe perder incidentes porque su
+        // activo esté borrado lógicamente (Incident.Asset es una navegación
+        // requerida). IgnoreQueryFilters quita el filtro "SoftDelete" de TODA
+        // la consulta, incluido el del propio Incident, por eso el Where
+        // explícito sobre la raíz (D2). Items y TotalCount comparten esta
+        // misma base para no desincronizarse.
+        var incidents = _context.Incidents
+            .IgnoreQueryFilters(["SoftDelete"])
+            .Where(i => !i.IsDeleted);
 
         if (query.AssetId.HasValue)
         {

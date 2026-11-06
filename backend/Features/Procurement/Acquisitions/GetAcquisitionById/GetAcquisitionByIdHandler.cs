@@ -16,12 +16,16 @@ public sealed class GetAcquisitionByIdHandler : IQueryHandler<GetAcquisitionById
     public async ValueTask<GetAcquisitionByIdResponse> Handle(
         GetAcquisitionByIdQuery query, CancellationToken cancellationToken)
     {
-        // Include(Supplier): Supplier tiene HasQueryFilter propio (!IsDeleted).
-        // EF Core aplica el filtro del tipo incluido automáticamente incluso
-        // en un Include sobre una entidad (Acquisition) que no lo tiene -- si
-        // el proveedor fue borrado lógicamente, Supplier viene null aquí en
-        // vez de lanzar. Se verifica con una prueba real más abajo.
+        // D3: la adquisición es historial y no debe perder líneas de compra
+        // porque el activo esté borrado lógicamente (AcquisitionAsset.Asset
+        // es una navegación requerida). IgnoreQueryFilters quita el filtro
+        // "SoftDelete" de TODA la consulta (D2, sin excepción): también deja
+        // de aplicarse al propio Acquisition y a Supplier, por eso el Where
+        // explícito sobre la raíz. Efecto visible: Supplier se sigue
+        // mostrando aunque esté borrado lógicamente (antes salía null).
         var acquisition = await _context.Acquisitions
+            .IgnoreQueryFilters(["SoftDelete"])
+            .Where(a => !a.IsDeleted)
             .Include(a => a.Supplier)
             .Include(a => a.AcquisitionAssets)
                 .ThenInclude(aa => aa.Asset)
