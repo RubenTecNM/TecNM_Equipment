@@ -1,6 +1,7 @@
 using Mediator;
 using Microsoft.EntityFrameworkCore;
 using TecnmInventario.Api.Common.Deletion;
+using TecnmInventario.Api.Common.Errors;
 using TecnmInventario.Api.Data;
 
 namespace TecnmInventario.Api.Features.Procurement.Acquisitions.DeleteAcquisition;
@@ -26,6 +27,16 @@ public sealed class DeleteAcquisitionHandler : ICommandHandler<DeleteAcquisition
         if (acquisition is null)
         {
             throw new KeyNotFoundException("La adquisición solicitada no existe.");
+        }
+
+        // E3/E1: acquisition_assets no tiene is_deleted (tabla puente pura),
+        // así que cualquier fila ya cuenta como "en uso" sin necesitar
+        // IgnoreQueryFilters. Consecuencia aceptada: hoy toda adquisición con
+        // al menos un activo asociado devuelve 409.
+        if (acquisition.AcquisitionAssets.Count > 0)
+        {
+            throw new ReferenceInUseException(
+                "No se puede eliminar la adquisición: tiene activos asociados.");
         }
 
         // Snapshot incluye los AcquisitionAssets: acquisition_assets no tiene

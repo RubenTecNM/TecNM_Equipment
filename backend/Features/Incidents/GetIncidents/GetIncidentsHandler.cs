@@ -22,8 +22,13 @@ public sealed class GetIncidentsHandler
         if (query.AssetId.HasValue)
         {
             var assetId = query.AssetId.Value;
+            // E5: IgnoreQueryFilters SIN Where(!IsDeleted) a propósito -- un
+            // activo borrado lógicamente sigue existiendo y su historial de
+            // incidentes debe verse (D3); solo un AssetId que no existe en
+            // absoluto debe devolver 404.
             var assetExists = await _context.Assets
-                .AnyAsync(a => a.AssetId == assetId && !a.IsDeleted, cancellationToken);
+                .IgnoreQueryFilters(["SoftDelete"])
+                .AnyAsync(a => a.AssetId == assetId, cancellationToken);
             if (!assetExists)
             {
                 throw new KeyNotFoundException("El activo solicitado no existe.");

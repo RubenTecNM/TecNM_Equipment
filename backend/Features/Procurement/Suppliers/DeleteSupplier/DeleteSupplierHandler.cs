@@ -1,6 +1,7 @@
 using Mediator;
 using Microsoft.EntityFrameworkCore;
 using TecnmInventario.Api.Common.Deletion;
+using TecnmInventario.Api.Common.Errors;
 using TecnmInventario.Api.Data;
 
 namespace TecnmInventario.Api.Features.Procurement.Suppliers.DeleteSupplier;
@@ -25,6 +26,35 @@ public sealed class DeleteSupplierHandler : ICommandHandler<DeleteSupplierComman
         if (supplier is null)
         {
             throw new KeyNotFoundException("El proveedor solicitado no existe.");
+        }
+
+        // E1/E2: "en uso" incluye referencias en cualquier estado (también
+        // borradas lógicamente), por eso IgnoreQueryFilters en cada comprobación.
+        var hasAcquisitions = await _context.Acquisitions
+            .IgnoreQueryFilters(["SoftDelete"])
+            .AnyAsync(a => a.SupplierId == command.SupplierId, cancellationToken);
+        if (hasAcquisitions)
+        {
+            throw new ReferenceInUseException(
+                "No se puede eliminar el proveedor: tiene adquisiciones registradas.");
+        }
+
+        var hasWarranties = await _context.AssetWarranties
+            .IgnoreQueryFilters(["SoftDelete"])
+            .AnyAsync(w => w.SupplierId == command.SupplierId, cancellationToken);
+        if (hasWarranties)
+        {
+            throw new ReferenceInUseException(
+                "No se puede eliminar el proveedor: tiene garantías registradas.");
+        }
+
+        var hasLicenses = await _context.SoftwareLicenses
+            .IgnoreQueryFilters(["SoftDelete"])
+            .AnyAsync(l => l.SupplierId == command.SupplierId, cancellationToken);
+        if (hasLicenses)
+        {
+            throw new ReferenceInUseException(
+                "No se puede eliminar el proveedor: tiene licencias de software registradas.");
         }
 
         var beforeSnapshot = new
