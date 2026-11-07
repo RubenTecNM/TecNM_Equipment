@@ -42,7 +42,15 @@ public sealed class RefreshSessionHandler : ICommandHandler<RefreshSessionComman
 
         await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
 
+        // H4: la carga del refresh token no debe depender del filtro de
+        // AppUser (RefreshToken.UserId es una FK requerida); sin esto, un
+        // usuario borrado lógicamente haría desaparecer la fila entera del
+        // token y nunca se llegaría a la comprobación explícita de abajo
+        // (línea ~90) que revoca el token y responde con un mensaje claro.
+        // RefreshToken no tiene columna is_deleted (backend/Core/Entities/
+        // RefreshToken.cs:1-32), así que no hace falta un Where sobre la raíz.
         var current = await _context.RefreshTokens
+            .IgnoreQueryFilters(["SoftDelete"])
             .Include(t => t.User).ThenInclude(u => u.Role)
             .FirstOrDefaultAsync(t => t.TokenHash == hash, cancellationToken);
 

@@ -65,9 +65,10 @@ public sealed class AuthSessionIssuer : IAuthSessionIssuer
 
     public async Task<AuthUserResponse> BuildProfileAsync(AppUser user, CancellationToken cancellationToken)
     {
+        // H3: Where explícito sobre Permission (ver RolePermissionService).
         var permissions = await _context.Roles
             .Where(r => r.RoleId == user.RoleId && !r.IsDeleted)
-            .SelectMany(r => r.Permissions.Select(p => p.Code))
+            .SelectMany(r => r.Permissions.Where(p => !p.IsDeleted).Select(p => p.Code))
             .OrderBy(code => code)
             .ToListAsync(cancellationToken);
 

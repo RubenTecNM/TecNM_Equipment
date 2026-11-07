@@ -26,7 +26,8 @@ public sealed class SoftDeleteGuardianTests
     // ─────────────────────────────────────────────────────────────────────────
     // Test 1a: ninguna entidad no-pendiente y no-exenta puede carecer del
     // filtro "SoftDelete". Los catálogos de SoftDeleteExemptCatalogs (F1,
-    // fase 4c.3) se excluyen a propósito: nunca llevan filtro global.
+    // fase 4c.3) y Role en SoftDeleteExemptSecurity (H1, fase 4d.2) se
+    // excluyen a propósito: nunca llevan filtro global.
     // ─────────────────────────────────────────────────────────────────────────
     [Fact]
     public void Guardian_EntidadesConIsDeleted_TienenFiltroOEstanPendientes()
@@ -38,6 +39,7 @@ public sealed class SoftDeleteGuardianTests
             .Where(e => e.FindProperty("IsDeleted") is not null)
             .Where(e => !SoftDeletePendingPhase.Contains(e.ClrType.Name))
             .Where(e => !TecnmInventarioDbContext.SoftDeleteExemptCatalogs.Contains(e.ClrType.Name))
+            .Where(e => !TecnmInventarioDbContext.SoftDeleteExemptSecurity.Contains(e.ClrType.Name))
             .Where(e =>
             {
                 var filters = e.GetDeclaredQueryFilters().ToList();
@@ -122,9 +124,18 @@ public sealed class SoftDeleteGuardianTests
             "AcquisitionAsset.AcquisitionId -> Acquisition",
             "AcquisitionAsset.AssetId -> Asset",
             "AssetAssignment.AssetId -> Asset",
+            // fase 4d.2 (H2): AppUser recibe el filtro "SoftDelete".
+            // AssetAssignment.AssignedTo -> AppUser: navegada por
+            // GetAssetAssignmentsHandler.cs:42 (a.AssignedToNavigation.Username),
+            // ya protegida con IgnoreQueryFilters(["SoftDelete"]) desde la fase 4a.
+            "AssetAssignment.AssignedTo -> AppUser",
             "AssetComponent.AssetId -> Asset",
             "AssetDisposal.AssetId -> Asset",
             "AssetMovement.AssetId -> Asset",
+            // AssetMovement.MovedBy -> AppUser: navegada por
+            // GetAssetMovementsHandler.cs:59 (m.MovedByNavigation.Username),
+            // ya protegida con IgnoreQueryFilters(["SoftDelete"]) desde la fase 4a.
+            "AssetMovement.MovedBy -> AppUser",
             "AssetMovement.ToLocationId -> Location",
             "AssetOsHistory.AssetId -> Asset",
             "AssetRelation.PrimaryAssetId -> Asset",
@@ -135,13 +146,33 @@ public sealed class SoftDeleteGuardianTests
             "AssetSpecification.AssetId -> Asset",
             "AssetWarranty.AssetId -> Asset",
             "BuildingSetting.LocationId -> Location",
+            // Dictionary`2.PermissionId -> Permission: EF representa así la
+            // tabla puente role_permissions (entidad de tipo compartido de la
+            // skip-navigation Role.Permissions <-> Permission.Roles). Es
+            // navegación de COLECCIÓN, no de valor único: el filtro de
+            // Permission solo quita ese ítem de la lista (RolePermissionService.cs,
+            // AuthSessionIssuer.cs, GetRolesHandler.cs, AssignPermissionsHandler.cs),
+            // nunca hace desaparecer la fila completa del Role. No pierde filas.
+            "Dictionary`2.PermissionId -> Permission",
             "Incident.AssetId -> Asset",
+            // Incident.ReportedBy -> AppUser: navegada por GetIncidentById.cs:45-46
+            // y GetIncidents.cs:108, ya protegidas con IgnoreQueryFilters(["SoftDelete"])
+            // desde la fase 4b.
+            "Incident.ReportedBy -> AppUser",
             "InventoryRecord.AssetId -> Asset",
             "MaintenanceRecord.AssetId -> Asset",
             "NetworkInterface.AssetId -> Asset",
+            // RefreshToken.UserId -> AppUser: navegada por
+            // RefreshSessionHandler.cs:46-51 (Include(t.User)), protegida con
+            // IgnoreQueryFilters(["SoftDelete"]) añadido en H4 (fase 4d.2).
+            "RefreshToken.UserId -> AppUser",
             "SoftwareLicense.SoftwareId -> Software",
             "SoftwareLicenseAssignment.AssetId -> Asset",
             "SoftwareLicenseAssignment.LicenseId -> SoftwareLicense",
+            // UserExternalLogin.UserId -> AppUser: navegada por
+            // ExternalLoginCallbackHandler.cs:76-82 (Include(l.User)), protegida
+            // con IgnoreQueryFilters(["SoftDelete"]) añadido en H5 (fase 4d.2).
+            "UserExternalLogin.UserId -> AppUser",
         };
 
         using var context = BuildInMemoryContext();
@@ -167,26 +198,14 @@ public sealed class SoftDeleteGuardianTests
     // ─────────────────────────────────────────────────────────────────────────
     // A7 (fase 4c.3, paso A): los catálogos exentos no tienen ningún filtro
     // "SoftDelete", y ninguna entidad con IsDeleted queda sin cubrir salvo
-    // que esté en SoftDeleteExemptCatalogs o en SoftDeletePendingPhase.
-    // HOY: SoftDeleteExemptCatalogs todavía no existe -> se busca por
-    // reflexión para no romper la compilación antes del PASO B; su ausencia
-    // es la causa explícita del rojo (Assert.Fail con mensaje claro).
+    // que esté en SoftDeleteExemptCatalogs, SoftDeleteExemptSecurity (H1,
+    // fase 4d.2) o en SoftDeletePendingPhase.
     // ─────────────────────────────────────────────────────────────────────────
     [Fact]
     public void Guardian_CatalogosExentos_NoTienenFiltroYEstanJustificados()
     {
-        var exemptField = typeof(TecnmInventarioDbContext).GetField(
-            "SoftDeleteExemptCatalogs",
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-
-        if (exemptField is null)
-        {
-            Assert.Fail(
-                "TecnmInventarioDbContext.SoftDeleteExemptCatalogs todavía no existe (pendiente del PASO B de 4c.3).");
-            return;
-        }
-
-        var exempt = (IReadOnlySet<string>)exemptField.GetValue(null)!;
+        var exempt = TecnmInventarioDbContext.SoftDeleteExemptCatalogs;
+        var exemptSecurity = TecnmInventarioDbContext.SoftDeleteExemptSecurity;
 
         using var context = BuildInMemoryContext();
         var entidadesConIsDeleted = context.Model
@@ -205,6 +224,7 @@ public sealed class SoftDeleteGuardianTests
 
         var sinCubrir = entidadesConIsDeleted
             .Where(e => !exempt.Contains(e.ClrType.Name))
+            .Where(e => !exemptSecurity.Contains(e.ClrType.Name))
             .Where(e => !SoftDeletePendingPhase.Contains(e.ClrType.Name))
             .Where(e => !e.GetDeclaredQueryFilters().Any(f => !f.IsAnonymous && f.Key == "SoftDelete"))
             .Select(e => e.ClrType.Name)

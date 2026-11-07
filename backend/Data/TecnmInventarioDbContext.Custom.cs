@@ -12,16 +12,28 @@ public partial class TecnmInventarioDbContext
 
     public virtual DbSet<UserExternalLogin> UserExternalLogins { get; set; }
 
-    // Entidades con is_deleted pendientes de recibir el filtro "SoftDelete"
-    // (fase 4d). Cuando la lista quede vacía, Guardian_ListaDePendientesVacia pasa.
+    // Entidades con is_deleted pendientes de recibir el filtro "SoftDelete".
+    // Vacía desde la fase 4d: AppUser y Permission ya tienen el filtro (H2);
+    // Role está exento a propósito (ver SoftDeleteExemptSecurity).
     // ⚠ No eliminar esta lista hasta que todos los filtros estén aplicados.
     public static readonly IReadOnlySet<string> SoftDeletePendingPhase =
+        new HashSet<string>(StringComparer.Ordinal);
+
+    // H1 (fase 4d.2): Role queda exento del filtro global, igual que los
+    // catálogos de SoftDeleteExemptCatalogs. AppUser.RoleId -> Role es una FK
+    // requerida y no existe endpoint que borre roles; con el filtro activo,
+    // un rol borrado por SQL directo haría desaparecer ENTERA la fila de
+    // cualquier usuario con ese rol en toda consulta que navegue u.Role
+    // (login -> "credenciales inválidas" aunque sean correctas; GetUsers,
+    // refresh y GetMe con el mismo problema). La autorización sigue cerrada
+    // sin el filtro: RolePermissionService ya excluye roles borrados con un
+    // Where(!r.IsDeleted) explícito (no depende de este filtro global).
+    // Consecuencia aceptada: un usuario activo con rol borrado se autentica
+    // pero recibe 403 en todo endpoint con permiso.
+    public static readonly IReadOnlySet<string> SoftDeleteExemptSecurity =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            // fase 4d — seguridad
-            "AppUser",
             "Role",
-            "Permission",
         };
 
     // F1 (fase 4c.3, decisión opción B): catálogos que NUNCA llevan filtro
@@ -144,6 +156,9 @@ public partial class TecnmInventarioDbContext
                 continue;
 
             if (SoftDeleteExemptCatalogs.Contains(entityType.ClrType.Name))
+                continue;
+
+            if (SoftDeleteExemptSecurity.Contains(entityType.ClrType.Name))
                 continue;
 
             var clrType = entityType.ClrType;

@@ -73,7 +73,14 @@ public sealed class ExternalLoginCallbackHandler
             return Fail(ErrorDomain);
         }
 
+        // H5: UserExternalLogin.UserId es una FK requerida; sin esto, un
+        // usuario borrado lógicamente haría desaparecer la fila del enlace
+        // entera, cayendo por error en la rama "sin cuenta vinculable" en vez
+        // de la comprobación explícita de abajo (línea ~101) que responde
+        // "cuenta_inactiva". UserExternalLogin no tiene columna is_deleted,
+        // así que no hace falta un Where sobre la raíz.
         var link = await _context.UserExternalLogins
+            .IgnoreQueryFilters(["SoftDelete"])
             .Include(l => l.User).ThenInclude(u => u.Role)
             .FirstOrDefaultAsync(l => l.Provider == provider && l.Subject == identity.Subject, cancellationToken);
 
