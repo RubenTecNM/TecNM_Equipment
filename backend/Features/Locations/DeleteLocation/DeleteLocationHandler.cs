@@ -28,22 +28,59 @@ public sealed class DeleteLocationHandler : ICommandHandler<DeleteLocationComman
             throw new KeyNotFoundException("La ubicación solicitada no existe.");
         }
 
+        // E1/E4: "en uso" incluye referencias en cualquier estado (también
+        // borradas lógicamente), por eso IgnoreQueryFilters en las
+        // comprobaciones sobre entidades con is_deleted (Location, Asset,
+        // BuildingSetting). AssetAssignment y AssetMovement no tienen
+        // is_deleted -- son historial puro, no necesitan IgnoreQueryFilters.
         var hasChildren = await _context.Locations
+            .IgnoreQueryFilters(["SoftDelete"])
             .AnyAsync(l => l.ParentLocationId == command.LocationId, cancellationToken);
 
         if (hasChildren)
         {
-            throw new BusinessRuleViolationException(
-                "No se puede eliminar una ubicación que tiene sub-ubicaciones. Elimine o reubique primero las sub-ubicaciones.");
+            throw new ReferenceInUseException(
+                "No se puede eliminar la ubicación: tiene sub-ubicaciones registradas.");
         }
 
         var hasAssets = await _context.Assets
-            .AnyAsync(a => a.CurrentLocationId == command.LocationId && !a.IsDeleted, cancellationToken);
+            .IgnoreQueryFilters(["SoftDelete"])
+            .AnyAsync(a => a.CurrentLocationId == command.LocationId, cancellationToken);
 
         if (hasAssets)
         {
-            throw new BusinessRuleViolationException(
-                "No se puede eliminar una ubicación que tiene activos asignados. Reubique los activos primero.");
+            throw new ReferenceInUseException(
+                "No se puede eliminar la ubicación: tiene activos registrados.");
+        }
+
+        var hasAssignments = await _context.AssetAssignments
+            .AnyAsync(a => a.LocationId == command.LocationId, cancellationToken);
+
+        if (hasAssignments)
+        {
+            throw new ReferenceInUseException(
+                "No se puede eliminar la ubicación: tiene asignaciones de activos registradas.");
+        }
+
+        var hasMovements = await _context.AssetMovements
+            .AnyAsync(
+                m => m.FromLocationId == command.LocationId || m.ToLocationId == command.LocationId,
+                cancellationToken);
+
+        if (hasMovements)
+        {
+            throw new ReferenceInUseException(
+                "No se puede eliminar la ubicación: tiene movimientos de activos registrados.");
+        }
+
+        var hasBuildingSettings = await _context.BuildingSettings
+            .IgnoreQueryFilters(["SoftDelete"])
+            .AnyAsync(b => b.LocationId == command.LocationId, cancellationToken);
+
+        if (hasBuildingSettings)
+        {
+            throw new ReferenceInUseException(
+                "No se puede eliminar la ubicación: tiene configuraciones de edificio registradas.");
         }
 
         var beforeSnapshot = new

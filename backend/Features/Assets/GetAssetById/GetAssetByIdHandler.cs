@@ -16,7 +16,12 @@ public sealed class GetAssetByIdHandler : IQueryHandler<GetAssetByIdQuery, GetAs
     public async ValueTask<GetAssetByIdResponse> Handle(
         GetAssetByIdQuery query, CancellationToken cancellationToken)
     {
+        // D5: el nombre de Manufacturer/Model es un dato real del activo y se
+        // muestra aunque el fabricante o el modelo estén borrados lógicamente.
+        // IgnoreQueryFilters quita el filtro "SoftDelete" de TODA la consulta
+        // (D2), incluido el del propio Asset, por eso el Where explícito.
         var asset = await _context.Assets
+            .IgnoreQueryFilters(["SoftDelete"])
             .Include(a => a.AssetType)
             .Include(a => a.AssetStatus)
             .Include(a => a.Manufacturer)

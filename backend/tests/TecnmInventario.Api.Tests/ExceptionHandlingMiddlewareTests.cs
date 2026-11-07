@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
+using TecnmInventario.Api.Common.Errors;
 using TecnmInventario.Api.Common.Middleware;
 
 namespace TecnmInventario.Api.Tests;
@@ -85,6 +86,21 @@ public class ExceptionHandlingMiddlewareTests
 
         using var problem = JsonDocument.Parse(body);
         Assert.Equal("Conflicto de concurrencia", problem.RootElement.GetProperty("title").GetString());
+    }
+
+    [Fact]
+    public async Task ReferenceInUseException_se_traduce_a_409()
+    {
+        var exception = new ReferenceInUseException("El proveedor tiene adquisiciones registradas.");
+
+        var (status, body) = await InvokeAsync(exception);
+
+        Assert.Equal(409, status);
+        using var problem = JsonDocument.Parse(body);
+        Assert.Equal(409, problem.RootElement.GetProperty("status").GetInt32());
+        Assert.Equal("Recurso en uso", problem.RootElement.GetProperty("title").GetString());
+        Assert.Equal("El proveedor tiene adquisiciones registradas.", problem.RootElement.GetProperty("detail").GetString());
+        Assert.Equal("/api/test", problem.RootElement.GetProperty("instance").GetString());
     }
 
     [Fact]

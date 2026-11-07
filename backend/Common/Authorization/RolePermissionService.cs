@@ -24,9 +24,13 @@ public sealed class RolePermissionService : IRolePermissionService
             async entry =>
             {
                 entry.AbsoluteExpirationRelativeToNow = CacheDuration;
+                // H3: Where explícito sobre Permission, código de seguridad que
+                // no depende solo del filtro global "SoftDelete" (defensa en
+                // profundidad: si alguna consulta futura usa IgnoreQueryFilters
+                // aquí por error, esto sigue cerrando el acceso).
                 return await _dbContext.Roles
                     .Where(r => r.Code == roleCode && !r.IsDeleted)
-                    .SelectMany(r => r.Permissions.Select(p => p.Code))
+                    .SelectMany(r => r.Permissions.Where(p => !p.IsDeleted).Select(p => p.Code))
                     .ToListAsync(cancellationToken);
             });
 

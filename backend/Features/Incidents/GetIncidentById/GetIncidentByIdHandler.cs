@@ -16,8 +16,14 @@ public sealed class GetIncidentByIdHandler : IQueryHandler<GetIncidentByIdQuery,
     public async ValueTask<GetIncidentByIdResponse> Handle(
         GetIncidentByIdQuery query, CancellationToken cancellationToken)
     {
+        // D3: el incidente es historial y no debe perder la fila porque su
+        // activo esté borrado lógicamente (Incident.Asset es una navegación
+        // requerida). IgnoreQueryFilters quita el filtro "SoftDelete" de TODA
+        // la consulta, incluido el del propio Incident, por eso el Where
+        // explícito sobre la raíz (D2).
         var result = await _context.Incidents
-            .Where(i => i.IncidentId == query.IncidentId)
+            .IgnoreQueryFilters(["SoftDelete"])
+            .Where(i => !i.IsDeleted && i.IncidentId == query.IncidentId)
             .Select(i => new GetIncidentByIdResponse(
                 i.IncidentId,
                 i.AssetId,

@@ -18,8 +18,11 @@ public sealed class GetAssetMovementsHandler
     public async ValueTask<PagedResult<GetAssetMovementsResponse>> Handle(
         GetAssetMovementsQuery query, CancellationToken cancellationToken)
     {
+        // A6: el historial se devuelve aunque el activo esté borrado lógicamente;
+        // el filtro global de Asset se omite intencionalmente aquí.
         var assetExists = await _context.Assets
-            .AnyAsync(a => a.AssetId == query.AssetId && !a.IsDeleted, cancellationToken);
+            .IgnoreQueryFilters(["SoftDelete"])
+            .AnyAsync(a => a.AssetId == query.AssetId, cancellationToken);
 
         if (!assetExists)
         {
@@ -33,11 +36,14 @@ public sealed class GetAssetMovementsHandler
 
         var totalCount = await baseQuery.CountAsync(cancellationToken);
 
+        // D3: el historial de movimientos es inmutable; las ubicaciones borradas
+        // lógicamente deben seguir apareciendo con su nombre original.
+        // IgnoreQueryFilters aplica a toda la query, incluidas las navegaciones.
         var items = await baseQuery
-            .Include(m => m.FromLocation)
-            .Include(m => m.ToLocation)
-            .Include(m => m.MovementReason)
-            .Include(m => m.MovedByNavigation)
+            .IgnoreQueryFilters(["SoftDelete"])
+            .Where(m => m.AssetId == query.AssetId)
+            .OrderByDescending(m => m.MovedAt)
+            .ThenByDescending(m => m.AssetMovementId)
             .Skip((query.PageNumber - 1) * query.PageSize)
             .Take(query.PageSize)
             .Select(m => new GetAssetMovementsResponse(

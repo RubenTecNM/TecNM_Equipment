@@ -116,8 +116,6 @@ public partial class TecnmInventarioDbContext : DbContext
 
             entity.ToTable("acquisitions", "inventario");
 
-            entity.HasQueryFilter(e => !e.IsDeleted);
-
             entity.Property(e => e.AcquisitionId)
                 .UseIdentityAlwaysColumn()
                 .HasColumnName("acquisition_id");
@@ -871,8 +869,6 @@ public partial class TecnmInventarioDbContext : DbContext
 
             entity.ToTable("documents", "inventario");
 
-            entity.HasQueryFilter(e => !e.IsDeleted);
-
             entity.HasIndex(e => new { e.OwnerType, e.OwnerId }, "ix_documents_owner")
                 .HasFilter("is_deleted = false");
 
@@ -1006,8 +1002,6 @@ public partial class TecnmInventarioDbContext : DbContext
             entity.HasKey(e => e.WarrantyId).HasName("asset_warranties_pkey");
 
             entity.ToTable("asset_warranties", "inventario");
-
-            entity.HasQueryFilter(e => !e.IsDeleted);
 
             entity.Property(e => e.WarrantyId)
                 .UseIdentityAlwaysColumn()
@@ -1288,8 +1282,6 @@ public partial class TecnmInventarioDbContext : DbContext
             entity.ToTable("incidents", "inventario");
 
             entity.HasIndex(e => e.AssetId, "ix_incidents_active_asset").HasFilter("(is_deleted = false)");
-
-            entity.HasQueryFilter(e => !e.IsDeleted);
 
             entity.Property(e => e.IncidentId)
                 .UseIdentityAlwaysColumn()
@@ -1649,8 +1641,6 @@ public partial class TecnmInventarioDbContext : DbContext
             entity.HasKey(e => e.LocationId).HasName("locations_pkey");
 
             entity.ToTable("locations", "inventario");
-
-            entity.HasQueryFilter(e => !e.IsDeleted);
 
             entity.HasIndex(e => e.ParentLocationId, "ix_locations_active_parent").HasFilter("(is_deleted = false)");
 
@@ -2428,8 +2418,6 @@ public partial class TecnmInventarioDbContext : DbContext
             entity.HasKey(e => e.SupplierId).HasName("suppliers_pkey");
 
             entity.ToTable("suppliers", "inventario");
-
-            entity.HasQueryFilter(e => !e.IsDeleted);
 
             entity.HasIndex(e => e.Name, "suppliers_name_key").IsUnique();
 
