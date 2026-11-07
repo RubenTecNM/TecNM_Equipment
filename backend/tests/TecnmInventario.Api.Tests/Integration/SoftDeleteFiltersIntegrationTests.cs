@@ -211,27 +211,6 @@ public sealed class SoftDeleteFiltersIntegrationTests : PostgresTestBase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // (b2) Fase 4c — Catálogo (AssetType) sin filtro global devuelve filas borradas
-    // ─────────────────────────────────────────────────────────────────────────
-    [DockerFact]
-    public async Task Fase4c_Catalogo_AssetType_SinFiltroGlobal_DevuelveFilasBorradas()
-    {
-        await using var db = await CreateDatabaseAsync();
-
-        var typeId = await db.ScalarAsync<long>(
-            "SELECT asset_type_id FROM inventario.asset_types WHERE code = 'PC'");
-        await db.ExecuteAsync(
-            $"UPDATE inventario.asset_types SET is_deleted = true WHERE asset_type_id = {typeId}");
-
-        using var ctx = db.CreateContext();
-        var ids = await ctx.AssetTypes.Select(t => t.AssetTypeId).ToListAsync();
-
-        // Con el filtro global (fase 4c): el tipo borrado no aparece.
-        // HOY: aparece → Assert.DoesNotContain FALLA.
-        Assert.DoesNotContain(typeId, ids);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
     // (b3) Fase 4d — AppUser sin filtro global devuelve filas borradas
     // ─────────────────────────────────────────────────────────────────────────
     [DockerFact]

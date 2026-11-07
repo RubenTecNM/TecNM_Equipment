@@ -13,12 +13,31 @@ public partial class TecnmInventarioDbContext
     public virtual DbSet<UserExternalLogin> UserExternalLogins { get; set; }
 
     // Entidades con is_deleted pendientes de recibir el filtro "SoftDelete"
-    // (fases 4c/d). Cuando la lista quede vacía, Guardian_ListaDePendientesVacia pasa.
+    // (fase 4d). Cuando la lista quede vacía, Guardian_ListaDePendientesVacia pasa.
     // ⚠ No eliminar esta lista hasta que todos los filtros estén aplicados.
     public static readonly IReadOnlySet<string> SoftDeletePendingPhase =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            // fase 4c — catálogos
+            // fase 4d — seguridad
+            "AppUser",
+            "Role",
+            "Permission",
+        };
+
+    // F1 (fase 4c.3, decisión opción B): catálogos que NUNCA llevan filtro
+    // global "SoftDelete", a diferencia de SoftDeletePendingPhase (que es
+    // temporal). Las 15 son el extremo requerido de una FK de Asset,
+    // Incident, Location u otra entidad operativa: con filtro global, un
+    // catálogo borrado lógicamente convertiría el Include/Select en INNER
+    // JOIN y haría desaparecer filas activas de listados y escrituras
+    // (ver Guardian_RelacionesRequeridasHaciaPrincipalesConSoftDelete). No
+    // existen endpoints que los borren hoy. F2: un catálogo borrado
+    // lógicamente deja de ofrecerse para registros nuevos (los validadores
+    // ya comprueban "!IsDeleted") pero los registros existentes lo siguen
+    // mostrando con su nombre, sin excepción.
+    public static readonly IReadOnlySet<string> SoftDeleteExemptCatalogs =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
             "AssetStatus",
             "AssetType",
             "AssignmentType",
@@ -34,10 +53,6 @@ public partial class TecnmInventarioDbContext
             "RelationType",
             "Service",
             "SoftwareType",
-            // fase 4d — seguridad
-            "AppUser",
-            "Role",
-            "Permission",
         };
 
     partial void OnModelCreatingPartial(ModelBuilder modelBuilder)
@@ -126,6 +141,9 @@ public partial class TecnmInventarioDbContext
                 continue;
 
             if (SoftDeletePendingPhase.Contains(entityType.ClrType.Name))
+                continue;
+
+            if (SoftDeleteExemptCatalogs.Contains(entityType.ClrType.Name))
                 continue;
 
             var clrType = entityType.ClrType;

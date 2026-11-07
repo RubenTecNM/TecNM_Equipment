@@ -24,7 +24,9 @@ public sealed class SoftDeleteGuardianTests
         TecnmInventarioDbContext.SoftDeletePendingPhase;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Test 1a: ninguna entidad no-pendiente puede carecer del filtro "SoftDelete"
+    // Test 1a: ninguna entidad no-pendiente y no-exenta puede carecer del
+    // filtro "SoftDelete". Los catálogos de SoftDeleteExemptCatalogs (F1,
+    // fase 4c.3) se excluyen a propósito: nunca llevan filtro global.
     // ─────────────────────────────────────────────────────────────────────────
     [Fact]
     public void Guardian_EntidadesConIsDeleted_TienenFiltroOEstanPendientes()
@@ -35,6 +37,7 @@ public sealed class SoftDeleteGuardianTests
             .GetEntityTypes()
             .Where(e => e.FindProperty("IsDeleted") is not null)
             .Where(e => !SoftDeletePendingPhase.Contains(e.ClrType.Name))
+            .Where(e => !TecnmInventarioDbContext.SoftDeleteExemptCatalogs.Contains(e.ClrType.Name))
             .Where(e =>
             {
                 var filters = e.GetDeclaredQueryFilters().ToList();
@@ -159,6 +162,56 @@ public sealed class SoftDeleteGuardianTests
             $"Relaciones nuevas no aprobadas (revisar sus consultas de historial, INNER JOIN oculta filas): " +
             $"[{string.Join(", ", nuevas)}]. " +
             $"Relaciones aprobadas que desaparecieron del modelo: [{string.Join(", ", desaparecidas)}].");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // A7 (fase 4c.3, paso A): los catálogos exentos no tienen ningún filtro
+    // "SoftDelete", y ninguna entidad con IsDeleted queda sin cubrir salvo
+    // que esté en SoftDeleteExemptCatalogs o en SoftDeletePendingPhase.
+    // HOY: SoftDeleteExemptCatalogs todavía no existe -> se busca por
+    // reflexión para no romper la compilación antes del PASO B; su ausencia
+    // es la causa explícita del rojo (Assert.Fail con mensaje claro).
+    // ─────────────────────────────────────────────────────────────────────────
+    [Fact]
+    public void Guardian_CatalogosExentos_NoTienenFiltroYEstanJustificados()
+    {
+        var exemptField = typeof(TecnmInventarioDbContext).GetField(
+            "SoftDeleteExemptCatalogs",
+            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+        if (exemptField is null)
+        {
+            Assert.Fail(
+                "TecnmInventarioDbContext.SoftDeleteExemptCatalogs todavía no existe (pendiente del PASO B de 4c.3).");
+            return;
+        }
+
+        var exempt = (IReadOnlySet<string>)exemptField.GetValue(null)!;
+
+        using var context = BuildInMemoryContext();
+        var entidadesConIsDeleted = context.Model
+            .GetEntityTypes()
+            .Where(e => e.FindProperty("IsDeleted") is not null)
+            .ToList();
+
+        var exentosConFiltro = entidadesConIsDeleted
+            .Where(e => exempt.Contains(e.ClrType.Name))
+            .Where(e => e.GetDeclaredQueryFilters().Any(f => !f.IsAnonymous && f.Key == "SoftDelete"))
+            .Select(e => e.ClrType.Name)
+            .OrderBy(x => x)
+            .ToList();
+
+        Assert.Empty(exentosConFiltro);
+
+        var sinCubrir = entidadesConIsDeleted
+            .Where(e => !exempt.Contains(e.ClrType.Name))
+            .Where(e => !SoftDeletePendingPhase.Contains(e.ClrType.Name))
+            .Where(e => !e.GetDeclaredQueryFilters().Any(f => !f.IsAnonymous && f.Key == "SoftDelete"))
+            .Select(e => e.ClrType.Name)
+            .OrderBy(x => x)
+            .ToList();
+
+        Assert.Empty(sinCubrir);
     }
 
     private static TecnmInventarioDbContext BuildInMemoryContext()
