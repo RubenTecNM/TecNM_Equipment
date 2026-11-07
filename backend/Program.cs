@@ -62,7 +62,7 @@ var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<
 // Falla al arrancar (no en la primera petición) si la configuración de
 // seguridad es insegura: secreto JWT débil o de ejemplo, o cookies sin Secure
 // fuera de Development.
-SecurityStartupValidator.Validate(jwtSecret, builder.Environment.IsDevelopment(), authOptions.CookieSecure);
+SecurityStartupValidator.Validate(jwtSecret, builder.Environment.IsDevelopment(), authOptions.CookieSecure, authOptions);
 
 var externalCookiePolicy = authOptions.CookieSecure ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
 

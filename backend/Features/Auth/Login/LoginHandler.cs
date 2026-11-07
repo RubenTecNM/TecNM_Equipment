@@ -21,12 +21,28 @@ public sealed class LoginHandler : ICommandHandler<LoginCommand, AuthUserRespons
 
     public async ValueTask<AuthUserResponse> Handle(LoginCommand command, CancellationToken cancellationToken)
     {
-        var user = await _context.AppUsers
-            .Include(u => u.Role)
-            .FirstOrDefaultAsync(
-                u => !u.IsDeleted &&
-                     (u.Username == command.UsernameOrEmail || u.Email == command.UsernameOrEmail),
-                cancellationToken);
+        // N2: con '@' se busca SOLO por email; sin '@', SOLO por username. Sin
+        // OR entre campos: el username de uno no puede coincidir con el email
+        // de otro. Comparación en minúsculas (lower(col) en PostgreSQL).
+        var login = command.UsernameOrEmail.Trim().ToLowerInvariant();
+        var query = _context.AppUsers.Include(u => u.Role).Where(u => !u.IsDeleted);
+        query = login.Contains('@')
+            ? query.Where(u => u.Email.ToLower() == login)
+            : query.Where(u => u.Username.ToLower() == login);
+
+        var candidates = await query.OrderBy(u => u.UserId).Take(10).ToListAsync(cancellationToken);
+
+        // N4: datos históricos que solo difieren en mayúsculas. Nunca se elige
+        // uno al azar: se rechaza con el mensaje genérico.
+        if (candidates.Count > 1)
+        {
+            _logger.LogWarning(
+                "Login rechazado: varias cuentas coinciden sin distinguir mayúsculas (user_id {UserIds})",
+                string.Join(", ", candidates.Select(u => u.UserId)));
+            throw new UnauthorizedAccessException("Credenciales inválidas.");
+        }
+
+        var user = candidates.SingleOrDefault();
 
         if (user is null || user.Status != "activo")
         {

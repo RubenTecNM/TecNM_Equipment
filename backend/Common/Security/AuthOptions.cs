@@ -17,6 +17,13 @@ public class AuthOptions
     /// <summary>Flag Secure de las cookies; solo se desactiva en Development (HTTP).</summary>
     public bool CookieSecure { get; set; } = true;
 
+    /// <summary>
+    /// Dominios de correo (exactos, sin "@") con los que una identidad de
+    /// Microsoft/Entra puede iniciar sesión o vincularse. Vacío = ninguno.
+    /// Los valores reales van en user-secrets o variables de entorno.
+    /// </summary>
+    public string[] AllowedEmailDomains { get; set; } = [];
+
     public EntraOptions Entra { get; set; } = new();
 
     public GoogleOptions Google { get; set; } = new();

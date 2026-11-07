@@ -16,6 +16,8 @@ public class RegisterValidator : AbstractValidator<RegisterCommand>
         RuleFor(x => x.Username)
             .NotEmpty().WithMessage("El usuario es obligatorio.")
             .MaximumLength(DbFieldLengths.Users.Username)
+            // N3: con '@' el login lo buscaría como correo.
+            .Must(u => u is null || !u.Contains('@')).WithMessage("El usuario no puede contener '@'.")
             .MustAsync(BeUniqueUsername).WithMessage("Ese nombre de usuario ya está en uso.");
 
         RuleFor(x => x.Email)
@@ -41,11 +43,22 @@ public class RegisterValidator : AbstractValidator<RegisterCommand>
             .MustAsync(RoleExists).WithMessage("El rol especificado no existe.");
     }
 
+    /// <summary>N1: forma canónica de username y email (la que se guarda).</summary>
+    public static string Normalize(string? value) => (value ?? string.Empty).Trim().ToLowerInvariant();
+
+    // N1: unicidad sin distinguir mayúsculas (lower(col) = valor normalizado),
+    // también frente a filas históricas guardadas con mayúsculas.
     private async Task<bool> BeUniqueUsername(string username, CancellationToken cancellationToken)
-        => !await _context.AppUsers.AnyAsync(u => u.Username == username, cancellationToken);
+    {
+        var normalized = Normalize(username);
+        return !await _context.AppUsers.AnyAsync(u => u.Username.ToLower() == normalized, cancellationToken);
+    }
 
     private async Task<bool> BeUniqueEmail(string email, CancellationToken cancellationToken)
-        => !await _context.AppUsers.AnyAsync(u => u.Email == email, cancellationToken);
+    {
+        var normalized = Normalize(email);
+        return !await _context.AppUsers.AnyAsync(u => u.Email.ToLower() == normalized, cancellationToken);
+    }
 
     private async Task<bool> RoleExists(string roleCode, CancellationToken cancellationToken)
         => await _context.Roles.AnyAsync(r => r.Code == roleCode && !r.IsDeleted, cancellationToken);

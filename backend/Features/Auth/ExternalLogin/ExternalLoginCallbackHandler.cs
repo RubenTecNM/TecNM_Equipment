@@ -73,6 +73,14 @@ public sealed class ExternalLoginCallbackHandler
             return Fail(ErrorDomain);
         }
 
+        // N5: Entra no garantiza que "email"/"preferred_username" estén
+        // verificados; solo se aceptan dominios de la lista, por igualdad exacta.
+        if (provider == AuthCookies.MicrosoftScheme && !IsAllowedEmailDomain(identity.Email))
+        {
+            _logger.LogWarning("Login de Microsoft rechazado: dominio de correo fuera de Auth:AllowedEmailDomains");
+            return Fail(ErrorDomain);
+        }
+
         // H5: UserExternalLogin.UserId es una FK requerida; sin esto, un
         // usuario borrado lógicamente haría desaparecer la fila del enlace
         // entera, cayendo por error en la rama "sin cuenta vinculable" en vez
@@ -89,10 +97,25 @@ public sealed class ExternalLoginCallbackHandler
         {
             // Primer login con este proveedor: se vincula por email a una cuenta
             // existente. No hay auto-alta; las cuentas las crea un ADMIN.
-            var email = identity.Email.ToLowerInvariant();
-            user = await _context.AppUsers
+            var email = identity.Email.Trim().ToLowerInvariant();
+            var candidates = await _context.AppUsers
                 .Include(u => u.Role)
-                .FirstOrDefaultAsync(u => !u.IsDeleted && u.Email.ToLower() == email, cancellationToken);
+                .Where(u => !u.IsDeleted && u.Email.ToLower() == email)
+                .OrderBy(u => u.UserId)
+                .Take(10)
+                .ToListAsync(cancellationToken);
+
+            // N4: cuentas históricas que solo difieren en mayúsculas. No se
+            // vincula ninguna: elegir una al azar podría entregar otra cuenta.
+            if (candidates.Count > 1)
+            {
+                _logger.LogWarning(
+                    "Vinculación federada rechazada ({Provider}): varias cuentas coinciden sin distinguir mayúsculas (user_id {UserIds})",
+                    provider, string.Join(", ", candidates.Select(u => u.UserId)));
+                return Fail(ErrorNoAccount);
+            }
+
+            user = candidates.SingleOrDefault();
 
             if (user is null)
             {
@@ -155,6 +178,19 @@ public sealed class ExternalLoginCallbackHandler
             return null;
 
         return new ExternalIdentity(subject, email);
+    }
+
+    // Igualdad exacta del dominio completo: "evil-ejemplo.edu.mx" no pasa por
+    // "ejemplo.edu.mx" (nada de EndsWith). Lista vacía = ningún dominio.
+    private bool IsAllowedEmailDomain(string email)
+    {
+        var at = email.LastIndexOf('@');
+        if (at < 0 || at == email.Length - 1)
+            return false;
+
+        var domain = email[(at + 1)..].Trim().ToLowerInvariant();
+        return _options.AllowedEmailDomains.Any(d =>
+            string.Equals(d?.Trim().TrimStart('@').ToLowerInvariant(), domain, StringComparison.Ordinal));
     }
 
     private ExternalLoginCallbackResponse Fail(string code) =>
