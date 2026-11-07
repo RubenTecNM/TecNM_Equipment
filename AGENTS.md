@@ -63,6 +63,15 @@ movimientos, incidentes, mantenimiento, baja formal, auditoría). Idioma de trab
       `git config core.hooksPath .githooks`) y en CI (`.github/workflows/security.yml`).
       Si gitleaks local no está instalado, el CI es el control que bloquea.
     - Antes de publicar cambios: `git ls-files` no debe contener `.env` ni rutas absolutas.
+20. **Borrado lógico (soft delete):**
+    - Nada se borra físicamente. `is_deleted` significa "registro creado por error" y es reversible. La baja de un equipo es el estado `DADO_DE_BAJA`, nunca `is_deleted`.
+    - Toda entidad con `IsDeleted` recibe por convención el filtro con nombre `"SoftDelete"` (`TecnmInventarioDbContext.Custom.cs`). Las únicas excepciones están en `SoftDeleteExemptCatalogs` (catálogos) y `SoftDeleteExemptSecurity` (`Role`), cada una justificada en el código. `SoftDeletePendingPhase` debe permanecer vacía.
+    - El historial siempre se ve: sus consultas usan `IgnoreQueryFilters(["SoftDelete"])` y, si la raíz tiene `is_deleted`, un `Where(!raiz.IsDeleted)` explícito. Única excepción deliberada (y comentada): comprobar la existencia de un activo para consultar su historial.
+    - Los listados operativos y los combos ocultan lo borrado; los validadores rechazan elegir un registro borrado.
+    - Toda FK requerida hacia un principal con filtro debe estar en la lista aprobada de `Guardian_RelacionesRequeridasHaciaPrincipalesConSoftDelete`. Añadir una exige revisar sus consultas: con filtro, el INNER JOIN oculta filas completas.
+    - Borrar algo referenciado por cualquier fila, en cualquier estado → `ReferenceInUseException` (409). Operar sobre algo cuyo activo está borrado → `BusinessRuleViolationException` (400). Ningún handler responde 404 ni 500 por una navegación filtrada.
+    - El código de seguridad (roles, permisos, sesiones) filtra `IsDeleted` de forma explícita además del filtro global.
+    - Deuda conocida: ventana de carrera entre la comprobación "en uso" y el borrado; la reactivación de bajas se diseñará con el módulo AssetDisposal.
 
 ## Máquina de estados del activo
 DISPONIBLE, ASIGNADO, EN_MANTENIMIENTO, CON_FALLA, DADO_DE_BAJA (terminal).
