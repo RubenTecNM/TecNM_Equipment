@@ -63,6 +63,7 @@ var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<
 // seguridad es insegura: secreto JWT débil o de ejemplo, o cookies sin Secure
 // fuera de Development.
 SecurityStartupValidator.Validate(jwtSecret, builder.Environment.IsDevelopment(), authOptions.CookieSecure, authOptions);
+SecurityStartupValidator.ValidateAllowedHosts(builder.Environment.IsDevelopment(), builder.Configuration["AllowedHosts"]);
 
 var externalCookiePolicy = authOptions.CookieSecure ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
 
@@ -179,18 +180,33 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
+// IP real detrás del proxy + límites de intentos por IP y por cuenta.
+builder.Services.AddPerimeterSecurity(builder.Configuration);
+
 var app = builder.Build();
 
+// Primero: todo lo que sigue (límites por IP, created_ip, esquema HTTPS) debe
+// ver la IP y el esquema del cliente, no los del proxy.
+app.UseForwardedHeaders();
+app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+else
+{
+    app.UseHsts();
+}
 
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 app.UseMiddleware<CsrfMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
+
+// Expuesto para WebApplicationFactory<Program> en los tests de integración HTTP.
+public partial class Program { }

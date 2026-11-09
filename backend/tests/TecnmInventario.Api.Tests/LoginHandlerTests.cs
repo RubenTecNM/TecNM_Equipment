@@ -96,7 +96,7 @@ public sealed class LoginHandlerTests
         SeedRoleAndUser(context, string.Empty);
 
         var logger = new CapturingLogger();
-        var handler = new LoginHandler(context, new FakeSessionIssuer(), logger);
+        var handler = new LoginHandler(context, new FakeSessionIssuer(), TestLoginAttempts.Create(), logger);
         var command = new LoginCommand("testuser", "secret123");
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(command, CancellationToken.None).AsTask());
@@ -114,7 +114,7 @@ public sealed class LoginHandlerTests
         SeedRoleAndUser(context, "SYSTEM_ACCOUNT_NO_LOGIN");
 
         var logger = new CapturingLogger();
-        var handler = new LoginHandler(context, new FakeSessionIssuer(), logger);
+        var handler = new LoginHandler(context, new FakeSessionIssuer(), TestLoginAttempts.Create(), logger);
         var command = new LoginCommand("testuser", "secret123");
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(command, CancellationToken.None).AsTask());
@@ -134,7 +134,7 @@ public sealed class LoginHandlerTests
         SeedRoleAndUser(context, validHash);
 
         var logger = new CapturingLogger();
-        var handler = new LoginHandler(context, new FakeSessionIssuer(), logger);
+        var handler = new LoginHandler(context, new FakeSessionIssuer(), TestLoginAttempts.Create(), logger);
         var command = new LoginCommand("testuser", "wrong-password");
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(command, CancellationToken.None).AsTask());
@@ -151,7 +151,7 @@ public sealed class LoginHandlerTests
 
         var logger = new CapturingLogger();
         var issuer = new FakeSessionIssuer();
-        var handler = new LoginHandler(context, issuer, logger);
+        var handler = new LoginHandler(context, issuer, TestLoginAttempts.Create(), logger);
         var command = new LoginCommand("testuser", "correct-password");
 
         var response = await handler.Handle(command, CancellationToken.None).AsTask();

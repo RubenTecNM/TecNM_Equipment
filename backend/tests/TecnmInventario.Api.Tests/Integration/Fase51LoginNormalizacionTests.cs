@@ -243,7 +243,7 @@ public sealed class Fase51LoginNormalizacionTests : PostgresTestBase
     {
         await using var context = db.CreateContext();
         var handler = new LoginHandler(
-            context, new FakeAuthSessionIssuer(), logger ?? NullLogger<LoginHandler>.Instance);
+            context, new FakeAuthSessionIssuer(), TestLoginAttempts.Create(), logger ?? NullLogger<LoginHandler>.Instance);
         return await handler.Handle(new LoginCommand(usernameOrEmail, password), CancellationToken.None);
     }
 

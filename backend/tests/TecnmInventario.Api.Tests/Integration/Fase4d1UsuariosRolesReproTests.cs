@@ -71,7 +71,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
 
         await using var contextBorrado = db.CreateContext();
         var handlerBorrado = new LoginHandler(
-            contextBorrado, new FakeAuthSessionIssuer(), NullLogger<LoginHandler>.Instance);
+            contextBorrado, new FakeAuthSessionIssuer(), TestLoginAttempts.Create(), NullLogger<LoginHandler>.Instance);
 
         var exBorrado = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             handlerBorrado.Handle(
@@ -79,7 +79,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
 
         await using var contextContrasenaIncorrecta = db.CreateContext();
         var handlerContrasenaIncorrecta = new LoginHandler(
-            contextContrasenaIncorrecta, new FakeAuthSessionIssuer(), NullLogger<LoginHandler>.Instance);
+            contextContrasenaIncorrecta, new FakeAuthSessionIssuer(), TestLoginAttempts.Create(), NullLogger<LoginHandler>.Instance);
 
         var exContrasenaIncorrecta = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             handlerContrasenaIncorrecta.Handle(
@@ -189,7 +189,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
 
         await using var context = db.CreateContext();
         var handler = new LoginHandler(
-            context, new FakeAuthSessionIssuer(allowIssue: true), NullLogger<LoginHandler>.Instance);
+            context, new FakeAuthSessionIssuer(allowIssue: true), TestLoginAttempts.Create(), NullLogger<LoginHandler>.Instance);
 
         // H1: el login no comprueba el rol -> autentica con credenciales correctas
         // aunque su rol esté borrado lógicamente (consecuencia aceptada de H1).

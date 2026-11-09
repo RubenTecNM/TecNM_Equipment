@@ -28,7 +28,12 @@ public class RegisterValidator : AbstractValidator<RegisterCommand>
 
         RuleFor(x => x.Password)
             .NotEmpty().WithMessage("La contraseña es obligatoria.")
-            .MinimumLength(8).WithMessage("La contraseña debe tener al menos 8 caracteres.");
+            .MinimumLength(8).WithMessage("La contraseña debe tener al menos 8 caracteres.")
+            // P5: bcrypt ignora lo que pase de 72 bytes (no caracteres: la ñ,
+            // los acentos y los símbolos ocupan más de un byte en UTF-8).
+            .Must(p => p is null || System.Text.Encoding.UTF8.GetByteCount(p) <= Login.LoginValidator.MaxPasswordBytes)
+                .WithMessage($"La contraseña no puede superar {Login.LoginValidator.MaxPasswordBytes} bytes " +
+                             "(las letras con acento, la ñ y los símbolos ocupan más de un byte).");
 
         RuleFor(x => x.FirstName)
             .NotEmpty().WithMessage("El nombre es obligatorio.")

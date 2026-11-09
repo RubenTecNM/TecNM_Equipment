@@ -62,6 +62,19 @@ public class ExceptionHandlingMiddleware
                 "Regla de negocio violada",
                 ex.Message);
         }
+        catch (Common.Security.TooManyRequestsException ex)
+        {
+            // Bloqueo por intentos fallidos (LoginAttemptLimiter): mismo 429,
+            // Retry-After y mensaje que el límite por IP del RateLimiter.
+            _logger.LogWarning("Demasiados intentos en {Path}", context.Request.Path);
+            context.Response.Headers.RetryAfter =
+                Common.Security.PerimeterSecurityExtensions.RetryAfterSeconds(ex.RetryAfter);
+            await WriteProblemDetailsAsync(
+                context,
+                HttpStatusCode.TooManyRequests,
+                "Demasiadas solicitudes",
+                ex.Message);
+        }
         catch (UnauthorizedAccessException ex)
         {
             _logger.LogWarning("Intento de acceso no autorizado en {Path}: {Reason}", context.Request.Path, ex.Message);

@@ -115,6 +115,29 @@ public static class SecurityStartupValidator
         }
     }
 
+    /// <summary>
+    /// Fuera de Development, AllowedHosts debe listar los nombres reales del
+    /// servidor: con "*" (o vacío) se acepta cualquier cabecera Host, y el
+    /// login federado arma la redirect_uri con ella.
+    /// </summary>
+    public static void ValidateAllowedHosts(bool isDevelopment, string? allowedHosts)
+    {
+        if (isDevelopment)
+        {
+            return;
+        }
+
+        var hosts = (allowedHosts ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (hosts.Length == 0 || hosts.Contains("*"))
+        {
+            throw new InvalidOperationException(
+                "AllowedHosts no puede ser '*' ni estar vacío fuera de Development: " +
+                "define los nombres del servidor separados por ';' (variable de entorno AllowedHosts).");
+        }
+    }
+
     public static void ValidateCookieSecure(bool isDevelopment, bool cookieSecure)
     {
         if (!isDevelopment && !cookieSecure)
