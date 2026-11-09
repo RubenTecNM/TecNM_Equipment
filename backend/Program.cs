@@ -37,6 +37,7 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
+builder.Services.Configure<SessionValidationOptions>(builder.Configuration.GetSection(SessionValidationOptions.SectionName));
 builder.Services.AddScoped<IAuthCookieWriter, AuthCookieWriter>();
 builder.Services.AddScoped<IAuthSessionIssuer, AuthSessionIssuer>();
 
@@ -84,7 +85,9 @@ var authentication = builder.Services
                     context.Token = token;
                 }
                 return Task.CompletedTask;
-            }
+            },
+            // S4: el token vale solo si el usuario sigue activo y con el mismo rol.
+            OnTokenValidated = SessionPrincipalValidator.ValidateAsync
         };
         options.TokenValidationParameters = new TokenValidationParameters
         {

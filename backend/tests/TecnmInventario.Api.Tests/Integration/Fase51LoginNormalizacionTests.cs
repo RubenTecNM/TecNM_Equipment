@@ -298,10 +298,12 @@ public sealed class Fase51LoginNormalizacionTests : PostgresTestBase
     private sealed class FakeAuthSessionIssuer : IAuthSessionIssuer
     {
         public Task<IssuedSession> IssueAsync(AppUser user, Guid? familyId, CancellationToken cancellationToken)
-            => Task.FromResult(new IssuedSession(new RefreshToken { UserId = user.UserId }, Profile(user)));
+            => Task.FromResult(new IssuedSession(new RefreshToken { UserId = user.UserId }, Profile(user), new SessionTokens("", DateTime.UtcNow, "", DateTime.UtcNow)));
 
         public Task<AuthUserResponse> BuildProfileAsync(AppUser user, CancellationToken cancellationToken)
             => Task.FromResult(Profile(user));
+
+        public void WriteCookies(IssuedSession session) { }
 
         private static AuthUserResponse Profile(AppUser user) => new(
             user.UserId, user.Username, user.Email, user.FirstName, user.LastName,

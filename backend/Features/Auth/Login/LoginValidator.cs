@@ -6,8 +6,12 @@ namespace TecnmInventario.Api.Features.Auth.Login;
 
 public class LoginValidator : AbstractValidator<LoginCommand>
 {
-    /// <summary>bcrypt solo usa los primeros 72 bytes de la contraseña.</summary>
-    public const int MaxPasswordBytes = 72;
+    /// <summary>
+    /// Tope anti-abuso (S0a). NO es 72: bcrypt trunca a 72 bytes igual al
+    /// crear y al verificar, así que quien se registró con una contraseña más
+    /// larga debe poder entrar. El límite de 72 bytes vive solo en Register.
+    /// </summary>
+    public const int MaxPasswordBytes = 1024;
 
     public LoginValidator()
     {

@@ -189,6 +189,15 @@ public class ExceptionHandlingMiddleware
         string detail,
         IDictionary<string, string[]>? errors = null)
     {
+        // S1: un error inesperado (500) no debe dejar cookies a medio escribir
+        // (p. ej. la de un refresh token cuya transacción no se confirmó). Los
+        // 400/401/403 de negocio conservan sus Set-Cookie: algunos borran la
+        // sesión a propósito (refresh revocado, cuenta inactiva).
+        if (statusCode == HttpStatusCode.InternalServerError)
+        {
+            context.Response.Headers.Remove(Microsoft.Net.Http.Headers.HeaderNames.SetCookie);
+        }
+
         context.Response.ContentType = "application/problem+json";
         context.Response.StatusCode = (int)statusCode;
 

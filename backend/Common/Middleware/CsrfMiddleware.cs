@@ -7,8 +7,9 @@ namespace TecnmInventario.Api.Common.Middleware;
 /// <summary>
 /// Protección CSRF double-submit para la sesión por cookies: en métodos que
 /// escriben, el header X-CSRF-Token debe coincidir con la cookie tecnm_csrf.
-/// Solo aplica cuando la petición se autentica con cookies; las que traen
-/// Authorization: Bearer (curl, tests) no son vulnerables a CSRF.
+/// Solo aplica cuando la petición trae cookies de sesión. S2: una cabecera
+/// Authorization ya NO basta para saltarla; solo un "Bearer ..." SIN cookies de
+/// sesión (curl, integraciones), que el navegador no puede forjar.
 /// </summary>
 public class CsrfMiddleware
 {
@@ -56,16 +57,23 @@ public class CsrfMiddleware
             HttpMethods.IsOptions(request.Method))
             return false;
 
-        if (request.Headers.Authorization.Count > 0)
+        var hasSessionCookie = request.Cookies.ContainsKey(AuthCookies.AccessToken) ||
+                               request.Cookies.ContainsKey(AuthCookies.RefreshToken);
+
+        if (IsBearer(request.Headers.Authorization.ToString()) && !hasSessionCookie)
             return false;
 
         var path = request.Path.Value ?? string.Empty;
         if (ExemptPrefixes.Any(p => path.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
             return false;
 
-        return request.Cookies.ContainsKey(AuthCookies.AccessToken) ||
-               request.Cookies.ContainsKey(AuthCookies.RefreshToken);
+        // Con cookie de sesión siempre se exige el token, venga o no otra
+        // cabecera Authorization ("Basic ...", "Bearer ..." + cookie, etc.).
+        return hasSessionCookie;
     }
+
+    private static bool IsBearer(string authorization)
+        => authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
 
     private static bool TokensMatch(HttpContext context)
     {

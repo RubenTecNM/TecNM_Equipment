@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace TecnmInventario.Api.Tests.Integration;
@@ -28,12 +29,15 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
     private readonly Dictionary<string, string?> _settings;
     private readonly IPAddress? _clientIp;
+    private readonly Action<IServiceCollection>? _configureTestServices;
 
     public ApiFactory(
         string? connectionString = null,
         IDictionary<string, string?>? overrides = null,
-        string? clientIp = DefaultClientIp)
+        string? clientIp = DefaultClientIp,
+        Action<IServiceCollection>? configureTestServices = null)
     {
+        _configureTestServices = configureTestServices;
         _clientIp = clientIp is null ? null : IPAddress.Parse(clientIp);
         _settings = new Dictionary<string, string?>
         {
@@ -69,6 +73,13 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
             services.AddSingleton<IStartupFilter>(new FixedRemoteIpStartupFilter(_clientIp)));
+
+        // Después de los registros de Program.cs (p. ej. interceptores de EF
+        // que simulan fallos de BD, solo en tests).
+        if (_configureTestServices is not null)
+        {
+            builder.ConfigureTestServices(_configureTestServices);
+        }
     }
 
     private sealed class FixedRemoteIpStartupFilter : IStartupFilter

@@ -123,6 +123,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
             context,
             new FakeAuthSessionIssuer(),
             new FakeAuthCookieWriter(rawToken),
+            Options.Create(new AuthOptions()),
             NullLogger<RefreshSessionHandler>.Instance);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
@@ -482,7 +483,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
             var profile = new AuthUserResponse(
                 user.UserId, user.Username, user.Email, user.FirstName, user.LastName,
                 user.Role.Code, user.Role.Name, []);
-            return Task.FromResult(new IssuedSession(new RefreshToken { UserId = user.UserId }, profile));
+            return Task.FromResult(new IssuedSession(new RefreshToken { UserId = user.UserId }, profile, new SessionTokens("", DateTime.UtcNow, "", DateTime.UtcNow)));
         }
 
         public Task<AuthUserResponse> BuildProfileAsync(AppUser user, CancellationToken cancellationToken)
@@ -497,6 +498,9 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
                 user.UserId, user.Username, user.Email, user.FirstName, user.LastName,
                 user.Role.Code, user.Role.Name, []));
         }
+
+        // Sin cookies reales: los tests no firman ni envían tokens.
+        public void WriteCookies(IssuedSession session) { }
     }
 
     private sealed class FakeAuthCookieWriter : IAuthCookieWriter

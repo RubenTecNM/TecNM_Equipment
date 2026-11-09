@@ -14,6 +14,12 @@ public class AuthOptions
 
     public int RefreshTokenDays { get; set; } = 7;
 
+    /// <summary>
+    /// Segundos durante los que reusar un refresh recién rotado se trata como
+    /// carrera entre pestañas y no como robo (que revoca toda la familia).
+    /// </summary>
+    public int RefreshReuseGraceSeconds { get; set; } = 5;
+
     /// <summary>Flag Secure de las cookies; solo se desactiva en Development (HTTP).</summary>
     public bool CookieSecure { get; set; } = true;
 

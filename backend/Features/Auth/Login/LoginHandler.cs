@@ -89,7 +89,10 @@ public sealed class LoginHandler : ICommandHandler<LoginCommand, AuthUserRespons
 
         _attempts.Reset(login);
 
+        // Sin transacción explícita: IssueAsync termina en SaveChanges y solo
+        // después se escriben las cookies (S1).
         var session = await _sessions.IssueAsync(user, familyId: null, cancellationToken);
+        _sessions.WriteCookies(session);
 
         return session.Profile;
     }

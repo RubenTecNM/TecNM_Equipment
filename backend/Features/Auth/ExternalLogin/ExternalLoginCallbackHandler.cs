@@ -153,8 +153,10 @@ public sealed class ExternalLoginCallbackHandler
                 cancellationToken);
         }
 
-        await _sessions.IssueAsync(user, familyId: null, cancellationToken);
+        var session = await _sessions.IssueAsync(user, familyId: null, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        // S1: cookies solo con la sesión ya confirmada.
+        _sessions.WriteCookies(session);
 
         return new ExternalLoginCallbackResponse(SpaUrl(ExternalLoginReturnUrl.Sanitize(command.ReturnUrl)));
     }

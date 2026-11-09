@@ -40,6 +40,7 @@
     <Content Include="..\..\..\scripts\add-incidents-permissions.sql" Link="Sql\add-incidents-permissions.sql" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\..\scripts\seed-users-view-permission.sql" Link="Sql\seed-users-view-permission.sql" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\..\scripts\add-auth-sessions.sql" Link="Sql\add-auth-sessions.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\add-users-manage-permission.sql" Link="Sql\add-users-manage-permission.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

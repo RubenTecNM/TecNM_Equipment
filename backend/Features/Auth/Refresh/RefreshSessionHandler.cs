@@ -1,5 +1,6 @@
 using Mediator;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using TecnmInventario.Api.Common.Security;
 using TecnmInventario.Api.Data;
 using TecnmInventario.Api.Features.Auth.Shared;
@@ -8,21 +9,25 @@ namespace TecnmInventario.Api.Features.Auth.Refresh;
 
 public sealed class RefreshSessionHandler : ICommandHandler<RefreshSessionCommand, AuthUserResponse>
 {
-    // Dos pestañas pueden refrescar a la vez con el mismo token: la segunda
-    // llega con uno recién rotado. Dentro de esta ventana no se trata como robo.
-    private static readonly TimeSpan RotationGrace = TimeSpan.FromSeconds(30);
-
     private readonly TecnmInventarioDbContext _context;
     private readonly IAuthSessionIssuer _sessions;
     private readonly IAuthCookieWriter _cookies;
     private readonly ILogger<RefreshSessionHandler> _logger;
 
+    // Dos pestañas pueden refrescar a la vez con el mismo token: la segunda
+    // llega con uno recién rotado. Dentro de esta ventana no se trata como robo.
+    // S3: corta (Auth:RefreshReuseGraceSeconds, 5 s por defecto) para que un
+    // ladrón que rote primero no deje sin detección el reúso legítimo.
+    private readonly TimeSpan _rotationGrace;
+
     public RefreshSessionHandler(
         TecnmInventarioDbContext context,
         IAuthSessionIssuer sessions,
         IAuthCookieWriter cookies,
+        IOptions<AuthOptions> options,
         ILogger<RefreshSessionHandler> logger)
     {
+        _rotationGrace = TimeSpan.FromSeconds(Math.Max(0, options.Value.RefreshReuseGraceSeconds));
         _context = context;
         _sessions = sessions;
         _cookies = cookies;
@@ -62,7 +67,7 @@ public sealed class RefreshSessionHandler : ICommandHandler<RefreshSessionComman
 
         if (current.RevokedAt is not null)
         {
-            var benignRace = current.ReplacedById is not null && now - current.RevokedAt.Value < RotationGrace;
+            var benignRace = current.ReplacedById is not null && now - current.RevokedAt.Value < _rotationGrace;
             if (!benignRace)
             {
                 // Reutilización de un token ya rotado: posible robo. Se cierra
@@ -100,6 +105,10 @@ public sealed class RefreshSessionHandler : ICommandHandler<RefreshSessionComman
         current.ReplacedById = issued.RefreshToken.RefreshTokenId;
         await _context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        // S1: cookies solo con la rotación ya confirmada. Si el commit falla,
+        // el cliente conserva su cookie y el token anterior sigue válido.
+        _sessions.WriteCookies(issued);
 
         return issued.Profile;
     }

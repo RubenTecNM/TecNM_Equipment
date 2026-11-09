@@ -58,9 +58,17 @@ public sealed class AuthSessionIssuer : IAuthSessionIssuer
         await _context.SaveChangesAsync(cancellationToken);
 
         var (accessToken, accessExpiresAt) = _tokenGenerator.GenerateToken(user);
-        _cookies.Write(accessToken, accessExpiresAt, rawRefresh, refreshExpiresAt);
 
-        return new IssuedSession(refreshToken, await BuildProfileAsync(user, cancellationToken));
+        return new IssuedSession(
+            refreshToken,
+            await BuildProfileAsync(user, cancellationToken),
+            new SessionTokens(accessToken, accessExpiresAt, rawRefresh, refreshExpiresAt));
+    }
+
+    public void WriteCookies(IssuedSession session)
+    {
+        var tokens = session.Tokens;
+        _cookies.Write(tokens.AccessToken, tokens.AccessExpiresAt, tokens.RefreshToken, tokens.RefreshExpiresAt);
     }
 
     public async Task<AuthUserResponse> BuildProfileAsync(AppUser user, CancellationToken cancellationToken)

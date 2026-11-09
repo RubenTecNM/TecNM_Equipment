@@ -81,7 +81,9 @@ public sealed class LoginAttemptLimiter
         }
     }
 
-    private static string Key(string identifier) => $"login-attempts:{identifier}";
+    // S0b: el contador se comparte entre mayúsculas y espacios ("JUAN" = "juan")
+    // aunque el llamador no normalice.
+    private static string Key(string identifier) => $"login-attempts:{identifier.Trim().ToLowerInvariant()}";
 
     private sealed class Entry
     {

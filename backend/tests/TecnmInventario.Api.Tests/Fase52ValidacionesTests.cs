@@ -47,13 +47,15 @@ public class Fase52ValidacionesTests
     }
 
     [Fact]
-    public async Task Login_PasswordDeMasDe72Bytes_Rechaza400()
+    public async Task Login_PasswordDeMasDe1024Bytes_Rechaza400()
     {
         var validator = new LoginValidator();
 
-        // 'ñ' ocupa 2 bytes: 36 = 72 bytes (vale), 37 = 74 bytes con solo 37 caracteres.
-        var atLimit = await validator.ValidateAsync(new LoginCommand("usuario", new string('ñ', 36)));
-        var overLimit = await validator.ValidateAsync(new LoginCommand("usuario", new string('ñ', 37)));
+        // 5.3 (S0a): en login el tope es solo anti-abuso (1024 bytes), no 72:
+        // quien se registró con una contraseña más larga debe poder entrar.
+        // 'ñ' ocupa 2 bytes: 512 = 1024 bytes (vale), 513 = 1026 bytes.
+        var atLimit = await validator.ValidateAsync(new LoginCommand("usuario", new string('ñ', 512)));
+        var overLimit = await validator.ValidateAsync(new LoginCommand("usuario", new string('ñ', 513)));
 
         Assert.DoesNotContain(atLimit.Errors, e => e.PropertyName == nameof(LoginCommand.Password));
         Assert.Contains(overLimit.Errors, e => e.PropertyName == nameof(LoginCommand.Password));

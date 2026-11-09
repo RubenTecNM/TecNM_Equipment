@@ -7,6 +7,9 @@ namespace TecnmInventario.Api.Features.Auth.Register;
 
 public class RegisterValidator : AbstractValidator<RegisterCommand>
 {
+    /// <summary>bcrypt solo usa los primeros 72 bytes de la contraseña.</summary>
+    public const int MaxPasswordBytes = 72;
+
     private readonly TecnmInventarioDbContext _context;
 
     public RegisterValidator(TecnmInventarioDbContext context)
@@ -31,8 +34,8 @@ public class RegisterValidator : AbstractValidator<RegisterCommand>
             .MinimumLength(8).WithMessage("La contraseña debe tener al menos 8 caracteres.")
             // P5: bcrypt ignora lo que pase de 72 bytes (no caracteres: la ñ,
             // los acentos y los símbolos ocupan más de un byte en UTF-8).
-            .Must(p => p is null || System.Text.Encoding.UTF8.GetByteCount(p) <= Login.LoginValidator.MaxPasswordBytes)
-                .WithMessage($"La contraseña no puede superar {Login.LoginValidator.MaxPasswordBytes} bytes " +
+            .Must(p => p is null || System.Text.Encoding.UTF8.GetByteCount(p) <= MaxPasswordBytes)
+                .WithMessage($"La contraseña no puede superar {MaxPasswordBytes} bytes " +
                              "(las letras con acento, la ñ y los símbolos ocupan más de un byte).");
 
         RuleFor(x => x.FirstName)

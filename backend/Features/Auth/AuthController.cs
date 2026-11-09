@@ -97,7 +97,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    [Authorize(Roles = "ADMIN")]
+    [Authorize(Policy = "users.manage")]
     public async Task<ActionResult<RegisterResponse>> Register(
         RegisterCommand command,
         CancellationToken cancellationToken)
