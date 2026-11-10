@@ -147,6 +147,7 @@ public sealed class Fase51LoginNormalizacionTests : PostgresTestBase
     public async Task Login_DosCuentasQueSoloDifierenEnMayusculas_Rechaza401()
     {
         await using var db = await CreateDatabaseAsync();
+        await DropLowerIndexesAsync(db);
         var lowerId = await InsertUserAsync(db, "sd51_dup", "sd51-dup1@test.local", Hash(Password));
         var upperId = await InsertUserAsync(db, "SD51_Dup", "sd51-dup2@test.local", Hash(Password));
 
@@ -200,6 +201,7 @@ public sealed class Fase51LoginNormalizacionTests : PostgresTestBase
     public async Task ExternalLogin_DosCandidatosPorMayusculas_NoVincula()
     {
         await using var db = await CreateDatabaseAsync();
+        await DropLowerIndexesAsync(db);
         var firstId = await InsertUserAsync(db, "sd51_dos_a", $"sd51-dos@{AllowedDomain}", "NO_LOGIN");
         var secondId = await InsertUserAsync(db, "sd51_dos_b", $"SD51-Dos@{AllowedDomain}", "NO_LOGIN");
 
@@ -219,6 +221,15 @@ public sealed class Fase51LoginNormalizacionTests : PostgresTestBase
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
+
+    // 5.4: los índices únicos sobre lower(username/email) ya impiden estos
+    // duplicados. Los tests de N4 simulan una BD ANTERIOR al script (datos
+    // históricos), así que quitan los índices solo en su BD clonada.
+    private static async Task DropLowerIndexesAsync(PostgresDatabase db)
+    {
+        await db.ExecuteAsync("DROP INDEX inventario.ux_app_users_username_lower");
+        await db.ExecuteAsync("DROP INDEX inventario.ux_app_users_email_lower");
+    }
 
     private static RegisterCommand NewRegister(string username, string email)
         => new(username, email, "ClaveSegura123!", "Nombre", "Apellido", "ADMIN");

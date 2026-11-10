@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using TecnmInventario.Api.Common.Domain;
@@ -10,6 +11,9 @@ public class RegisterValidator : AbstractValidator<RegisterCommand>
     /// <summary>bcrypt solo usa los primeros 72 bytes de la contraseña.</summary>
     public const int MaxPasswordBytes = 72;
 
+    // U2: tras normalizar (minúsculas), solo ASCII sin espacios.
+    private static readonly Regex UsernameFormat = new("^[a-z0-9._-]+$", RegexOptions.CultureInvariant);
+
     private readonly TecnmInventarioDbContext _context;
 
     public RegisterValidator(TecnmInventarioDbContext context)
@@ -17,16 +21,22 @@ public class RegisterValidator : AbstractValidator<RegisterCommand>
         _context = context;
 
         RuleFor(x => x.Username)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty().WithMessage("El usuario es obligatorio.")
             .MaximumLength(DbFieldLengths.Users.Username)
             // N3: con '@' el login lo buscaría como correo.
             .Must(u => u is null || !u.Contains('@')).WithMessage("El usuario no puede contener '@'.")
+            .Must(u => u is null || UsernameFormat.IsMatch(Normalize(u)))
+                .WithMessage("El usuario solo puede contener letras sin acentos, números, punto, guion y guion bajo.")
             .MustAsync(BeUniqueUsername).WithMessage("Ese nombre de usuario ya está en uso.");
 
         RuleFor(x => x.Email)
             .NotEmpty().WithMessage("El correo es obligatorio.")
             .MaximumLength(DbFieldLengths.Users.Email)
             .EmailAddress().WithMessage("El correo no tiene un formato válido.")
+            // U3: igual que el username, el correo se guarda y se compara en ASCII.
+            .Must(e => e is null || e.All(char.IsAscii))
+                .WithMessage("El correo solo puede contener caracteres ASCII (sin acentos ni ñ).")
             .MustAsync(BeUniqueEmail).WithMessage("Ese correo ya está registrado.");
 
         RuleFor(x => x.Password)

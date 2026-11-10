@@ -9,6 +9,16 @@ namespace TecnmInventario.Api.Common.Middleware;
 public class ExceptionHandlingMiddleware
 {
     private const string UniqueViolation = "23505";
+
+    // Índices únicos con mensaje funcional propio (Lote 5.4): el alta de un
+    // usuario que solo difiere en mayúsculas llega aquí cuando dos altas
+    // compiten y el validador no alcanzó a verla.
+    private static readonly IReadOnlyDictionary<string, string> UniqueIndexMessages =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ux_app_users_username_lower"] = "Ya existe un usuario con ese nombre.",
+            ["ux_app_users_email_lower"] = "Ya existe un usuario con ese correo."
+        };
     private const string ForeignKeyViolation = "23503";
     private const string CheckViolation = "23514";
     private const string StringDataRightTruncation = "22001";
@@ -131,7 +141,9 @@ public class ExceptionHandlingMiddleware
                 UniqueViolation => (
                     HttpStatusCode.Conflict,
                     "Conflicto",
-                    "Ya existe un registro con esos datos."),
+                    pgEx.ConstraintName is { } constraint && UniqueIndexMessages.TryGetValue(constraint, out var message)
+                        ? message
+                        : "Ya existe un registro con esos datos."),
                 ForeignKeyViolation => (
                     HttpStatusCode.BadRequest,
                     "Datos no válidos",
