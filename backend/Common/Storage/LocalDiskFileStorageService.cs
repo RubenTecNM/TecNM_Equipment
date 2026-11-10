@@ -1,9 +1,14 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Options;
 
 namespace TecnmInventario.Api.Common.Storage;
 
-public sealed class LocalDiskFileStorageService : IFileStorageService
+public sealed partial class LocalDiskFileStorageService : IFileStorageService
 {
+    // Extensiones que puede producir el tipo detectado (".pdf", ".jpg", ".png").
+    [GeneratedRegex(@"^\.[a-z0-9]{1,8}$", RegexOptions.CultureInvariant)]
+    private static partial Regex ExtensionFormat();
+
     private readonly string _rootPath;
 
     public LocalDiskFileStorageService(IOptions<FileStorageOptions> options)
@@ -12,13 +17,17 @@ public sealed class LocalDiskFileStorageService : IFileStorageService
         Directory.CreateDirectory(_rootPath);
     }
 
-    public async Task<string> SaveAsync(Stream content, string originalFileName, CancellationToken cancellationToken)
+    public async Task<string> SaveAsync(Stream content, string extension, CancellationToken cancellationToken)
     {
-        var extension = Path.GetExtension(originalFileName);
-        var storageKey = $"{Guid.NewGuid():N}{extension}";
-        var fullPath = Path.Combine(_rootPath, storageKey);
+        if (!ExtensionFormat().IsMatch(extension))
+        {
+            throw new ArgumentException("Extensión de almacenamiento no válida.", nameof(extension));
+        }
 
-        await using var fileStream = File.Create(fullPath);
+        var storageKey = $"{Guid.NewGuid():N}{extension}";
+        var fullPath = ResolveSafePath(_rootPath, storageKey);
+
+        await using var fileStream = new FileStream(fullPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         await content.CopyToAsync(fileStream, cancellationToken);
 
         return storageKey;
@@ -26,11 +35,11 @@ public sealed class LocalDiskFileStorageService : IFileStorageService
 
     public Task<Stream> OpenReadAsync(string storageKey, CancellationToken cancellationToken)
     {
-        var fullPath = ResolveSafePath(storageKey);
+        var fullPath = ResolveSafePath(_rootPath, storageKey);
 
         if (!File.Exists(fullPath))
         {
-            throw new FileNotFoundException("El archivo solicitado ya no existe en el almacenamiento.", storageKey);
+            throw new FileNotFoundException("El archivo solicitado ya no existe en el almacenamiento.");
         }
 
         Stream stream = File.OpenRead(fullPath);
@@ -39,7 +48,7 @@ public sealed class LocalDiskFileStorageService : IFileStorageService
 
     public Task DeleteAsync(string storageKey, CancellationToken cancellationToken)
     {
-        var fullPath = ResolveSafePath(storageKey);
+        var fullPath = ResolveSafePath(_rootPath, storageKey);
 
         if (File.Exists(fullPath))
         {
@@ -49,14 +58,36 @@ public sealed class LocalDiskFileStorageService : IFileStorageService
         return Task.CompletedTask;
     }
 
-    private string ResolveSafePath(string storageKey)
+    /// <summary>
+    /// ST1: la ruta resuelta debe quedar DENTRO de la raíz (raíz + separador:
+    /// ".../storage-malo" no está dentro de ".../storage") y ni el archivo ni
+    /// ningún directorio intermedio bajo la raíz pueden ser enlaces simbólicos.
+    /// La raíz misma puede ser un enlace: la decide quien despliega.
+    /// </summary>
+    /// <exception cref="StoragePathException">Siempre con mensaje fijo, sin la ruta.</exception>
+    public static string ResolveSafePath(string rootPath, string storageKey)
     {
-        var fullPath = Path.GetFullPath(Path.Combine(_rootPath, storageKey));
-        var normalizedRoot = Path.GetFullPath(_rootPath);
+        var normalizedRoot = Path.GetFullPath(rootPath);
+        var fullPath = Path.GetFullPath(Path.Combine(normalizedRoot, storageKey));
+        var rootWithSeparator = normalizedRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? normalizedRoot
+            : normalizedRoot + Path.DirectorySeparatorChar;
 
-        if (!fullPath.StartsWith(normalizedRoot, StringComparison.Ordinal))
+        if (!fullPath.StartsWith(rootWithSeparator, StringComparison.Ordinal))
         {
-            throw new UnauthorizedAccessException("Ruta de almacenamiento inválida.");
+            throw new StoragePathException();
+        }
+
+        var current = normalizedRoot;
+        foreach (var segment in fullPath[rootWithSeparator.Length..]
+                     .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, segment);
+            FileSystemInfo info = Directory.Exists(current) ? new DirectoryInfo(current) : new FileInfo(current);
+            if (info.LinkTarget is not null)
+            {
+                throw new StoragePathException();
+            }
         }
 
         return fullPath;

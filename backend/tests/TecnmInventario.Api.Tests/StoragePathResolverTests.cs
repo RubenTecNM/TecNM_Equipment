@@ -55,7 +55,7 @@ public class StoragePathResolverTests
                 Options.Create(new FileStorageOptions { LocalPath = resolved }));
 
             await using var content = new MemoryStream("contenido de prueba"u8.ToArray());
-            var key = await storage.SaveAsync(content, "evidencia.txt", CancellationToken.None);
+            var key = await storage.SaveAsync(content, ".txt", CancellationToken.None);
 
             Assert.True(File.Exists(Path.Combine(resolved, key)));
 
