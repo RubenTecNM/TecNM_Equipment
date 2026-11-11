@@ -202,6 +202,67 @@ public sealed class MaintenanceEnv : IAsyncDisposable
     public Task<HttpResponseMessage> CancelAsync(long recordId, int expectedVersion, string? reason = "Cancelado en prueba", string? token = null)
         => PostAsync($"/api/maintenance/{recordId}/cancel", new { expectedVersion, reason }, token);
 
+    // ── Incidentes, estado, movimientos y asignaciones por la API real (M.3) ──
+
+    public async Task<long> CreateIncidentAsync(long assetId)
+    {
+        var response = await PostAsync("/api/incidents", new
+        {
+            assetId,
+            incidentTypeId = await Db.ScalarAsync<long>("SELECT incident_type_id FROM inventario.incident_types WHERE code = 'HARDWARE'"),
+            incidentPriorityId = await Db.ScalarAsync<long>("SELECT incident_priority_id FROM inventario.incident_priorities WHERE code = 'ALTA'"),
+            title = "Falla ficticia M.3"
+        });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        return (await ReadAsync(response)).GetProperty("incidentId").GetInt64();
+    }
+
+    public Task<int> IncidentVersionAsync(long incidentId)
+        => Db.ScalarAsync<int>($"SELECT version FROM inventario.incidents WHERE incident_id = {incidentId}");
+
+    public async Task IncidentToRepairAsync(long incidentId)
+    {
+        var response = await SendAsync(HttpMethod.Patch,
+            $"/api/incidents/{incidentId}/status?expectedVersion={await IncidentVersionAsync(incidentId)}",
+            new { newStatusCode = "EN_REPARACION", reason = "En reparación (prueba)" });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    public async Task<HttpResponseMessage> ResolveIncidentAsync(long incidentId)
+        => await SendAsync(HttpMethod.Post,
+            $"/api/incidents/{incidentId}/resolve?expectedVersion={await IncidentVersionAsync(incidentId)}",
+            new { solution = "Reparado en prueba" });
+
+    public async Task<HttpResponseMessage> PatchStatusAsync(long assetId, string newStatusCode)
+        => await SendAsync(HttpMethod.Patch,
+            $"/api/assets/{assetId}/status?expectedVersion={await AssetVersionAsync(assetId)}",
+            new { newStatusCode, reason = "Cambio de prueba" });
+
+    public async Task<HttpResponseMessage> MoveAsync(long assetId)
+    {
+        var locationId = await Db.ScalarAsync<long>($"""
+            INSERT INTO inventario.locations (code, name, location_type_id)
+            SELECT 'M3-{Guid.NewGuid().ToString("N")[..8]}', 'Ubicación ficticia', location_type_id
+            FROM inventario.location_types ORDER BY location_type_id LIMIT 1
+            RETURNING location_id
+            """);
+        var reasonId = await Db.ScalarAsync<long>(
+            "SELECT movement_reason_id FROM inventario.movement_reasons WHERE code = 'REUBICACION'");
+        return await SendAsync(HttpMethod.Post,
+            $"/api/assets/{assetId}/movements?expectedVersion={await AssetVersionAsync(assetId)}",
+            new { toLocationId = locationId, movementReasonId = reasonId });
+    }
+
+    public async Task<HttpResponseMessage> AssignAsync(long assetId)
+        => await SendAsync(HttpMethod.Post,
+            $"/api/assets/{assetId}/assignments?expectedVersion={await AssetVersionAsync(assetId)}",
+            new
+            {
+                assignedTo = AdminId,
+                assignmentTypeId = await Db.ScalarAsync<long>(
+                    "SELECT assignment_type_id FROM inventario.assignment_types WHERE code = 'PERSONAL'")
+            });
+
     public static async Task<JsonElement> ReadAsync(HttpResponseMessage response)
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
 

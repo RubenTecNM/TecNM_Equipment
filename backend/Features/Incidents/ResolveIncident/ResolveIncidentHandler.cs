@@ -121,22 +121,27 @@ public sealed class ResolveIncidentHandler : ICommandHandler<ResolveIncidentComm
             && (assetStatusCode == AssetStatusCodes.ConFalla
                 || assetStatusCode == AssetStatusCodes.EnMantenimiento))
         {
-            var hasActiveAssignment = await _context.AssetAssignments
-                .AnyAsync(a => a.AssetId == incident.AssetId && a.ReturnedAt == null, cancellationToken);
-
-            var target = hasActiveAssignment ? AssetStatusCodes.Asignado : AssetStatusCodes.Disponible;
+            // Política única (I1): el incidente que se cierra ya está RESUELTO y
+            // sale del conteo; con un mantenimiento EN_CURSO el activo NO se libera.
+            var decision = await AssetReleasePolicy.DecideAsync(
+                _context, incident.AssetId, incident.IncidentId, excludeMaintenanceRecordId: null, cancellationToken);
+            var target = decision.TargetStatusCode;
             var reason = $"Incidente #{incident.IncidentId} resuelto";
 
             // La matriz exige pasar por EN_MANTENIMIENTO antes de volver a circular.
-            if (assetStatusCode == AssetStatusCodes.ConFalla)
+            if (assetStatusCode == AssetStatusCodes.ConFalla && target != AssetStatusCodes.EnMantenimiento)
             {
                 await _assetStatusChanger.ChangeAsync(
                     asset, AssetStatusCodes.EnMantenimiento, reason + " (paso intermedio)", cancellationToken);
             }
 
-            var change = await _assetStatusChanger.ChangeAsync(asset, target, reason, cancellationToken);
-            finalAssetStatus = change.NewStatusCode;
-            released = true;
+            if (assetStatusCode != target)
+            {
+                var change = await _assetStatusChanger.ChangeAsync(asset, target, reason, cancellationToken);
+                finalAssetStatus = change.NewStatusCode;
+            }
+
+            released = decision.Released;
         }
 
         await _auditLog.LogAsync(

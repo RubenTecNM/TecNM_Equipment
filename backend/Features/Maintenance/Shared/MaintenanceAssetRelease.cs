@@ -35,12 +35,9 @@ public static class MaintenanceAssetRelease
         string reason,
         CancellationToken cancellationToken)
     {
-        var openCodes = IncidentStatusCodes.Open.ToArray();
-        var openStatusCodes = await context.Incidents
-            .Where(i => i.AssetId == asset.AssetId && openCodes.Contains(i.IncidentStatus.Code))
-            .Select(i => i.IncidentStatus.Code)
-            .ToListAsync(cancellationToken);
-        var openIncidents = openStatusCodes.Count;
+        var decision = await AssetReleasePolicy.DecideAsync(
+            context, asset.AssetId, excludeIncidentId: null, record.MaintenanceRecordId, cancellationToken);
+        var openIncidents = decision.OpenIncidents;
 
         // Un activo dado de baja es terminal: no se toca (la baja se bloquea mientras
         // haya un mantenimiento en curso, pero esta guarda no depende de ello).
@@ -52,21 +49,7 @@ public static class MaintenanceAssetRelease
             return new MaintenanceReleaseResult(false, lockedAssetStatusCode, openIncidents);
         }
 
-        string target;
-        if (openStatusCodes.Contains(IncidentStatusCodes.EnReparacion))
-        {
-            target = AssetStatusCodes.EnMantenimiento;
-        }
-        else if (openIncidents > 0)
-        {
-            target = AssetStatusCodes.ConFalla;
-        }
-        else
-        {
-            var hasActiveAssignment = await context.AssetAssignments
-                .AnyAsync(a => a.AssetId == asset.AssetId && a.ReturnedAt == null, cancellationToken);
-            target = hasActiveAssignment ? AssetStatusCodes.Asignado : AssetStatusCodes.Disponible;
-        }
+        var target = decision.TargetStatusCode;
 
         record.StatusAfterId = await context.AssetStatuses
             .Where(s => s.Code == target && !s.IsDeleted)
@@ -94,7 +77,6 @@ public static class MaintenanceAssetRelease
 
         await context.Entry(record).ReloadAsync(cancellationToken);
 
-        var released = target is AssetStatusCodes.Disponible or AssetStatusCodes.Asignado;
-        return new MaintenanceReleaseResult(released, target, openIncidents);
+        return new MaintenanceReleaseResult(decision.Released, target, openIncidents);
     }
 }
