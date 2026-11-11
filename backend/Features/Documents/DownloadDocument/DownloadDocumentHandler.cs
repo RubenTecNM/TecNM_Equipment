@@ -55,6 +55,12 @@ public sealed class DownloadDocumentHandler : IQueryHandler<DownloadDocumentQuer
             throw new KeyNotFoundException("El archivo no está disponible.");
         }
 
-        return new DownloadDocumentResult(stream, document.FileName, document.MimeType);
+        // R3b: el nombre de Content-Disposition pasa SIEMPRE por la misma
+        // sanitización que en la subida, también para documentos antiguos cuyo
+        // file_name se guardó crudo (con separadores o ".."). La extensión de
+        // respaldo sale de la clave de almacenamiento (GUID + extensión).
+        var downloadName = DocumentFileNames.Sanitize(document.FileName, Path.GetExtension(document.StorageKey));
+
+        return new DownloadDocumentResult(stream, downloadName, document.MimeType);
     }
 }

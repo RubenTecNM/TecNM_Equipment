@@ -123,14 +123,20 @@ public sealed class UploadDocumentHandler : ICommandHandler<UploadDocumentComman
     // documents.owner_type y que el trigger trg_documents_validate_owner de la
     // BD, que solo comprueba EXISTENCIA, no el borrado lógico).
     // AssetDisposal no tiene is_deleted: una baja formal no se borra.
+    // R3c (regla 20): un incidente o un mantenimiento cuyo ACTIVO está borrado
+    // lógicamente tampoco admite documentos. Acquisition no tiene un activo
+    // directo (relación N:M en acquisition_assets) y AssetDisposal sí, pero su
+    // regla con el borrado del activo está pendiente del módulo AssetDisposal.
     private async Task EnsureOwnerExistsAsync(string ownerType, long ownerId, CancellationToken cancellationToken)
     {
         var exists = ownerType switch
         {
             DocumentOwnerTypes.Incident => await _context.Incidents
-                .AnyAsync(i => i.IncidentId == ownerId && !i.IsDeleted, cancellationToken),
+                .AnyAsync(i => i.IncidentId == ownerId && !i.IsDeleted
+                    && _context.Assets.Any(a => a.AssetId == i.AssetId && !a.IsDeleted), cancellationToken),
             DocumentOwnerTypes.Maintenance => await _context.MaintenanceRecords
-                .AnyAsync(m => m.MaintenanceRecordId == ownerId && !m.IsDeleted, cancellationToken),
+                .AnyAsync(m => m.MaintenanceRecordId == ownerId && !m.IsDeleted
+                    && _context.Assets.Any(a => a.AssetId == m.AssetId && !a.IsDeleted), cancellationToken),
             DocumentOwnerTypes.AssetDisposal => await _context.AssetDisposals
                 .AnyAsync(d => d.AssetDisposalId == ownerId, cancellationToken),
             DocumentOwnerTypes.Acquisition => await _context.Acquisitions

@@ -72,6 +72,15 @@ movimientos, incidentes, mantenimiento, baja formal, auditoría). Idioma de trab
     - Borrar algo referenciado por cualquier fila, en cualquier estado → `ReferenceInUseException` (409). Operar sobre algo cuyo activo está borrado → `BusinessRuleViolationException` (400). Ningún handler responde 404 ni 500 por una navegación filtrada.
     - El código de seguridad (roles, permisos, sesiones) filtra `IsDeleted` de forma explícita además del filtro global.
     - Deuda conocida: ventana de carrera entre la comprobación "en uso" y el borrado; la reactivación de bajas se diseñará con el módulo AssetDisposal.
+21. **Seguridad (Lote 5):**
+    - Login: `username` y `email` se guardan y comparan en minúsculas (`RegisterValidator.Normalize`). Con `@` se busca solo por correo, sin él solo por usuario: nunca un OR. Límite por IP (`auth-login`, `auth-refresh`) y por identificador (`LoginAttemptLimiter`); toda rama de rechazo paga un `BCrypt.Verify` (tiempo igualado). Configuración en `Security:RateLimiting`.
+    - Sesión: las cookies se escriben DESPUÉS de `SaveChanges`/`Commit` (`IAuthSessionIssuer.WriteCookies`). El CSRF solo se omite con `Bearer` y sin cookies de sesión. `OnTokenValidated` revalida estado, borrado y rol en cada petición (caché `Security:SessionValidation:CacheSeconds`, 30 s). Gracia de reúso del refresh: `Auth:RefreshReuseGraceSeconds` (5 s).
+    - Login externo: Entra solo con los dominios de `Auth:AllowedEmailDomains` (igualdad exacta) y con tenant fijo (nunca `common`, `organizations` ni `consumers`); Google exige `HostedDomain`. Si un correo tiene más de un candidato, no se vincula.
+    - Permisos: toda ruta usa `[Authorize(Policy = "<permiso>")]`, nunca `Roles = "..."`. Todo endpoint nuevo de escritura necesita su permiso (script idempotente, regla 7) y un test de 403. La caché de permisos por rol dura 5 min y solo se invalida desde `AssignPermissions`: un cambio por SQL exige reiniciar la API.
+    - Storage: la ruta se resuelve con raíz + separador y sin enlaces simbólicos (`LocalDiskFileStorageService.ResolveSafePath`). El tipo sale de los magic bytes (PDF, JPEG, PNG), nunca de la extensión ni del Content-Type. En disco el nombre es GUID + extensión detectada; el nombre del cliente se sanitiza (`DocumentFileNames`), también al descargar. Nada se borra físicamente (solo se compensa un Upload cuya transacción falló). Archivo ausente → 404; subida mayor que 5 MB + 64 KB → 413.
+    - Errores: todo 403 lleva el texto fijo "No tienes permiso para realizar esta acción." (el detalle va solo al log). Un P0001 solo sale tal cual si su texto exacto está en `FunctionalRaiseMessages`; si no, "La operación no cumple las reglas del sistema." y el original va al log.
+    - La autorización de documentos es por `OwnerType`, no por objeto, y es INTENCIONAL (`DocumentAuthorizationMap`): quien tiene el permiso de un tipo accede a cualquier documento de ese tipo.
+    - Despliegue: `docs/DESPLIEGUE.md`. Pendientes de la SPA: `docs/FRONTEND-PENDIENTES-SEGURIDAD.md`.
 
 ## Máquina de estados del activo
 DISPONIBLE, ASIGNADO, EN_MANTENIMIENTO, CON_FALLA, DADO_DE_BAJA (terminal).

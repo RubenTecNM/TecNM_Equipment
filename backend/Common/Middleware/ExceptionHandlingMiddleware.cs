@@ -24,13 +24,27 @@ public class ExceptionHandlingMiddleware
     private const string StringDataRightTruncation = "22001";
     private const string RaiseException = "P0001";
 
+    // R1: cuerpo único de todo 403 por permiso. El detalle (rol, tipo, permiso)
+    // va solo al log: el cliente no debe aprender cómo está armada la autorización.
+    private const string ForbiddenMessage = "No tienes permiso para realizar esta acción.";
+
+    // R2: cualquier P0001 que no esté en la lista blanca sale con este texto.
+    private const string GenericRaiseMessage = "La operación no cumple las reglas del sistema.";
+
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+    private readonly FunctionalRaiseMessages _functionalRaiseMessages;
 
-    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+    // El tercer parámetro es opcional: en producción se usa la lista vacía por
+    // defecto; los tests pueden registrar otra en el contenedor.
+    public ExceptionHandlingMiddleware(
+        RequestDelegate next,
+        ILogger<ExceptionHandlingMiddleware> logger,
+        FunctionalRaiseMessages? functionalRaiseMessages = null)
     {
         _next = next;
         _logger = logger;
+        _functionalRaiseMessages = functionalRaiseMessages ?? FunctionalRaiseMessages.Default;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -101,7 +115,7 @@ public class ExceptionHandlingMiddleware
                 context,
                 HttpStatusCode.Forbidden,
                 "Acceso prohibido",
-                ex.Message);
+                ForbiddenMessage);
         }
         catch (KeyNotFoundException ex)
         {
@@ -130,11 +144,12 @@ public class ExceptionHandlingMiddleware
             // constraint, el SQL ni el detalle técnico.
             _logger.LogWarning(
                 ex,
-                "Error de integridad en {Path}. SqlState={SqlState} Constraint={Constraint} Detail={Detail}",
+                "Error de integridad en {Path}. SqlState={SqlState} Constraint={Constraint} Detail={Detail} MessageText={MessageText}",
                 context.Request.Path,
                 pgEx.SqlState,
                 pgEx.ConstraintName,
-                pgEx.Detail);
+                pgEx.Detail,
+                pgEx.MessageText);
 
             var (status, title, detail) = pgEx.SqlState switch
             {
@@ -156,10 +171,14 @@ public class ExceptionHandlingMiddleware
                     HttpStatusCode.BadRequest,
                     "Datos no válidos",
                     "Uno de los valores excede la longitud permitida."),
+                // R2: el texto de un RAISE EXCEPTION solo sale tal cual si está
+                // en la lista blanca (coincidencia exacta); el original queda en el log.
                 RaiseException => (
                     HttpStatusCode.BadRequest,
                     "Error de validación",
-                    pgEx.MessageText),
+                    _functionalRaiseMessages.Contains(pgEx.MessageText)
+                        ? pgEx.MessageText
+                        : GenericRaiseMessage),
                 _ => (
                     HttpStatusCode.InternalServerError,
                     "Error interno del servidor",
