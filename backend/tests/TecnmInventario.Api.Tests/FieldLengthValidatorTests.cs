@@ -25,7 +25,8 @@ public class FieldLengthValidatorTests
         public string Name { get; init; } = "file";
         public string FileName { get; init; } = "archivo.pdf";
 
-        public Stream OpenReadStream() => Stream.Null;
+        // Cabecera de PDF: el validador decide el tipo por el contenido.
+        public Stream OpenReadStream() => new MemoryStream("%PDF-1.4"u8.ToArray());
 
         public void CopyTo(Stream target)
         {
@@ -172,7 +173,8 @@ public class FieldLengthValidatorTests
     [Fact]
     public void UploadDocument_alinea_file_name_con_la_columna()
     {
-        var validator = new UploadDocumentValidator();
+        var validator = new UploadDocumentValidator(
+            Microsoft.Extensions.Options.Options.Create(new TecnmInventario.Api.Common.Storage.FileStorageOptions()));
 
         var atLimit = validator.Validate(new UploadDocumentCommand(
             DocumentOwnerTypes.Incident,

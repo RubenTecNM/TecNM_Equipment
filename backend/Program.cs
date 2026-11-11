@@ -37,6 +37,7 @@ builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptio
 builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
+builder.Services.Configure<SessionValidationOptions>(builder.Configuration.GetSection(SessionValidationOptions.SectionName));
 builder.Services.AddScoped<IAuthCookieWriter, AuthCookieWriter>();
 builder.Services.AddScoped<IAuthSessionIssuer, AuthSessionIssuer>();
 
@@ -62,7 +63,8 @@ var authOptions = builder.Configuration.GetSection(AuthOptions.SectionName).Get<
 // Falla al arrancar (no en la primera petición) si la configuración de
 // seguridad es insegura: secreto JWT débil o de ejemplo, o cookies sin Secure
 // fuera de Development.
-SecurityStartupValidator.Validate(jwtSecret, builder.Environment.IsDevelopment(), authOptions.CookieSecure);
+SecurityStartupValidator.Validate(jwtSecret, builder.Environment.IsDevelopment(), authOptions.CookieSecure, authOptions);
+SecurityStartupValidator.ValidateAllowedHosts(builder.Environment.IsDevelopment(), builder.Configuration["AllowedHosts"]);
 
 var externalCookiePolicy = authOptions.CookieSecure ? CookieSecurePolicy.Always : CookieSecurePolicy.SameAsRequest;
 
@@ -83,7 +85,9 @@ var authentication = builder.Services
                     context.Token = token;
                 }
                 return Task.CompletedTask;
-            }
+            },
+            // S4: el token vale solo si el usuario sigue activo y con el mismo rol.
+            OnTokenValidated = SessionPrincipalValidator.ValidateAsync
         };
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -179,18 +183,33 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
+// IP real detrás del proxy + límites de intentos por IP y por cuenta.
+builder.Services.AddPerimeterSecurity(builder.Configuration);
+
 var app = builder.Build();
 
+// Primero: todo lo que sigue (límites por IP, created_ip, esquema HTTPS) debe
+// ver la IP y el esquema del cliente, no los del proxy.
+app.UseForwardedHeaders();
+app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
+else
+{
+    app.UseHsts();
+}
 
 app.UseHttpsRedirection();
+app.UseRateLimiter();
 app.UseMiddleware<CsrfMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
+
+// Expuesto para WebApplicationFactory<Program> en los tests de integración HTTP.
+public partial class Program { }

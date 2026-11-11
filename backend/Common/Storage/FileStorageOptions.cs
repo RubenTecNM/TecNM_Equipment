@@ -12,4 +12,12 @@ public sealed class FileStorageOptions
     /// arrancar sin configuración explícita.
     /// </summary>
     public string LocalPath { get; set; } = "storage/documents";
+
+    /// <summary>
+    /// Tamaño máximo de un archivo subido, en bytes (5 MB por defecto). El CHECK
+    /// de documents.size_bytes en la BD también topa en 5242880: subir este valor
+    /// exige cambiar ese CHECK, y el límite de la petición del endpoint
+    /// (DocumentUploadLimits) está calculado sobre 5 MB.
+    /// </summary>
+    public long MaxFileSizeBytes { get; set; } = 5L * 1024 * 1024;
 }

@@ -20,7 +20,14 @@ public class DocumentsController : ControllerBase
         _mediator = mediator;
     }
 
+    // Límite de la petición: 5 MB + 64 KB de margen para el resto del formulario
+    // (DocumentUploadLimits). Si lo supera: 413 (DocumentUploadSizeLimit, por
+    // Content-Length) y [RequestSizeLimit] como defensa sin Content-Length. El
+    // máximo del archivo (Storage:MaxFileSizeBytes) lo valida el validador (400).
     [HttpPost]
+    [DocumentUploadSizeLimit]
+    [RequestSizeLimit(DocumentUploadLimits.MaxRequestBodyBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = DocumentUploadLimits.MaxRequestBodyBytes)]
     public async Task<ActionResult<UploadDocumentResponse>> UploadDocument(
         [FromForm] UploadDocumentRequest request,
         CancellationToken cancellationToken)

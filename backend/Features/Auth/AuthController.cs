@@ -2,6 +2,8 @@ using Mediator;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using TecnmInventario.Api.Common.Security;
 using TecnmInventario.Api.Features.Auth.ExternalLogin;
 using TecnmInventario.Api.Features.Auth.GetMe;
 using TecnmInventario.Api.Features.Auth.GetProviders;
@@ -30,6 +32,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimitPolicies.Login)]
     public async Task<ActionResult<AuthUserResponse>> Login(
         LoginCommand command,
         CancellationToken cancellationToken)
@@ -40,6 +43,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("refresh")]
     [AllowAnonymous]
+    [EnableRateLimiting(RateLimitPolicies.Refresh)]
     public async Task<ActionResult<AuthUserResponse>> Refresh(CancellationToken cancellationToken)
     {
         var result = await _mediator.Send(new RefreshSessionCommand(), cancellationToken);
@@ -93,7 +97,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    [Authorize(Roles = "ADMIN")]
+    [Authorize(Policy = "users.manage")]
     public async Task<ActionResult<RegisterResponse>> Register(
         RegisterCommand command,
         CancellationToken cancellationToken)

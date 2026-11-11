@@ -10,7 +10,8 @@ namespace TecnmInventario.Api.Tests;
 
 public class ExceptionHandlingMiddlewareTests
 {
-    private static async Task<(int Status, string Body)> InvokeAsync(Exception exception)
+    private static async Task<(int Status, string Body)> InvokeAsync(
+        Exception exception, FunctionalRaiseMessages? functionalRaiseMessages = null)
     {
         var context = new DefaultHttpContext();
         context.Request.Path = "/api/test";
@@ -18,7 +19,8 @@ public class ExceptionHandlingMiddlewareTests
 
         var middleware = new ExceptionHandlingMiddleware(
             _ => throw exception,
-            NullLogger<ExceptionHandlingMiddleware>.Instance);
+            NullLogger<ExceptionHandlingMiddleware>.Instance,
+            functionalRaiseMessages);
 
         await middleware.InvokeAsync(context);
 
@@ -57,20 +59,34 @@ public class ExceptionHandlingMiddlewareTests
         Assert.Equal("/api/test", problem.RootElement.GetProperty("instance").GetString());
     }
 
+    // 5.6 (R2): el mensaje de un trigger solo sale tal cual si está en la lista
+    // blanca (coincidencia exacta); antes salía siempre.
     [Fact]
-    public async Task P0001_conserva_el_mensaje_de_negocio_del_trigger()
+    public async Task P0001_conserva_el_mensaje_de_negocio_del_trigger_si_esta_en_la_lista_blanca()
+    {
+        const string message = "El documento no pertenece a un propietario válido.";
+        var postgres = new PostgresException(message, "ERROR", "ERROR", "P0001");
+        var exception = new DbUpdateException("update failed", postgres);
+
+        var (status, body) = await InvokeAsync(exception, new FunctionalRaiseMessages([message]));
+
+        Assert.Equal(400, status);
+        Assert.Contains("El documento no pertenece", body);
+    }
+
+    [Fact]
+    public async Task P0001_fuera_de_la_lista_blanca_se_sustituye_por_un_mensaje_generico()
     {
         var postgres = new PostgresException(
-            "El documento no pertenece a un propietario válido.",
-            "ERROR",
-            "ERROR",
-            "P0001");
+            "documents.owner_id 7 no existe en la tabla correspondiente a owner_type=INCIDENT",
+            "ERROR", "ERROR", "P0001");
         var exception = new DbUpdateException("update failed", postgres);
 
         var (status, body) = await InvokeAsync(exception);
 
         Assert.Equal(400, status);
-        Assert.Contains("El documento no pertenece", body);
+        Assert.Contains("La operación no cumple las reglas del sistema.", body);
+        Assert.DoesNotContain("owner_id", body);
     }
 
     [Fact]

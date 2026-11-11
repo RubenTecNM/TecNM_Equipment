@@ -179,3 +179,16 @@ internal sealed class RecordingRolePermissionService
         OnInvalidate?.Invoke(roleCode);
     }
 }
+
+/// <summary>
+/// Contador de intentos de login nuevo y aislado (caché propia) con los
+/// límites por defecto: ningún test que no mida los límites tropieza con ellos.
+/// </summary>
+internal static class TestLoginAttempts
+{
+    public static LoginAttemptLimiter Create()
+        => new(
+            new Microsoft.Extensions.Caching.Memory.MemoryCache(
+                new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()),
+            Microsoft.Extensions.Options.Options.Create(new RateLimitingOptions()));
+}

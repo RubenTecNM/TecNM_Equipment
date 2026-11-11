@@ -14,8 +14,21 @@ public class AuthOptions
 
     public int RefreshTokenDays { get; set; } = 7;
 
+    /// <summary>
+    /// Segundos durante los que reusar un refresh recién rotado se trata como
+    /// carrera entre pestañas y no como robo (que revoca toda la familia).
+    /// </summary>
+    public int RefreshReuseGraceSeconds { get; set; } = 5;
+
     /// <summary>Flag Secure de las cookies; solo se desactiva en Development (HTTP).</summary>
     public bool CookieSecure { get; set; } = true;
+
+    /// <summary>
+    /// Dominios de correo (exactos, sin "@") con los que una identidad de
+    /// Microsoft/Entra puede iniciar sesión o vincularse. Vacío = ninguno.
+    /// Los valores reales van en user-secrets o variables de entorno.
+    /// </summary>
+    public string[] AllowedEmailDomains { get; set; } = [];
 
     public EntraOptions Entra { get; set; } = new();
 

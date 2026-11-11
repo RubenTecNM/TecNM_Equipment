@@ -9,18 +9,42 @@ namespace TecnmInventario.Api.Common.Middleware;
 public class ExceptionHandlingMiddleware
 {
     private const string UniqueViolation = "23505";
+
+    // Índices únicos con mensaje funcional propio (Lote 5.4): el alta de un
+    // usuario que solo difiere en mayúsculas llega aquí cuando dos altas
+    // compiten y el validador no alcanzó a verla.
+    private static readonly IReadOnlyDictionary<string, string> UniqueIndexMessages =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ux_app_users_username_lower"] = "Ya existe un usuario con ese nombre.",
+            ["ux_app_users_email_lower"] = "Ya existe un usuario con ese correo."
+        };
     private const string ForeignKeyViolation = "23503";
     private const string CheckViolation = "23514";
     private const string StringDataRightTruncation = "22001";
     private const string RaiseException = "P0001";
 
+    // R1: cuerpo único de todo 403 por permiso. El detalle (rol, tipo, permiso)
+    // va solo al log: el cliente no debe aprender cómo está armada la autorización.
+    private const string ForbiddenMessage = "No tienes permiso para realizar esta acción.";
+
+    // R2: cualquier P0001 que no esté en la lista blanca sale con este texto.
+    private const string GenericRaiseMessage = "La operación no cumple las reglas del sistema.";
+
     private readonly RequestDelegate _next;
     private readonly ILogger<ExceptionHandlingMiddleware> _logger;
+    private readonly FunctionalRaiseMessages _functionalRaiseMessages;
 
-    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+    // El tercer parámetro es opcional: en producción se usa la lista vacía por
+    // defecto; los tests pueden registrar otra en el contenedor.
+    public ExceptionHandlingMiddleware(
+        RequestDelegate next,
+        ILogger<ExceptionHandlingMiddleware> logger,
+        FunctionalRaiseMessages? functionalRaiseMessages = null)
     {
         _next = next;
         _logger = logger;
+        _functionalRaiseMessages = functionalRaiseMessages ?? FunctionalRaiseMessages.Default;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -62,6 +86,19 @@ public class ExceptionHandlingMiddleware
                 "Regla de negocio violada",
                 ex.Message);
         }
+        catch (Common.Security.TooManyRequestsException ex)
+        {
+            // Bloqueo por intentos fallidos (LoginAttemptLimiter): mismo 429,
+            // Retry-After y mensaje que el límite por IP del RateLimiter.
+            _logger.LogWarning("Demasiados intentos en {Path}", context.Request.Path);
+            context.Response.Headers.RetryAfter =
+                Common.Security.PerimeterSecurityExtensions.RetryAfterSeconds(ex.RetryAfter);
+            await WriteProblemDetailsAsync(
+                context,
+                HttpStatusCode.TooManyRequests,
+                "Demasiadas solicitudes",
+                ex.Message);
+        }
         catch (UnauthorizedAccessException ex)
         {
             _logger.LogWarning("Intento de acceso no autorizado en {Path}: {Reason}", context.Request.Path, ex.Message);
@@ -78,7 +115,7 @@ public class ExceptionHandlingMiddleware
                 context,
                 HttpStatusCode.Forbidden,
                 "Acceso prohibido",
-                ex.Message);
+                ForbiddenMessage);
         }
         catch (KeyNotFoundException ex)
         {
@@ -107,18 +144,21 @@ public class ExceptionHandlingMiddleware
             // constraint, el SQL ni el detalle técnico.
             _logger.LogWarning(
                 ex,
-                "Error de integridad en {Path}. SqlState={SqlState} Constraint={Constraint} Detail={Detail}",
+                "Error de integridad en {Path}. SqlState={SqlState} Constraint={Constraint} Detail={Detail} MessageText={MessageText}",
                 context.Request.Path,
                 pgEx.SqlState,
                 pgEx.ConstraintName,
-                pgEx.Detail);
+                pgEx.Detail,
+                pgEx.MessageText);
 
             var (status, title, detail) = pgEx.SqlState switch
             {
                 UniqueViolation => (
                     HttpStatusCode.Conflict,
                     "Conflicto",
-                    "Ya existe un registro con esos datos."),
+                    pgEx.ConstraintName is { } constraint && UniqueIndexMessages.TryGetValue(constraint, out var message)
+                        ? message
+                        : "Ya existe un registro con esos datos."),
                 ForeignKeyViolation => (
                     HttpStatusCode.BadRequest,
                     "Datos no válidos",
@@ -131,10 +171,14 @@ public class ExceptionHandlingMiddleware
                     HttpStatusCode.BadRequest,
                     "Datos no válidos",
                     "Uno de los valores excede la longitud permitida."),
+                // R2: el texto de un RAISE EXCEPTION solo sale tal cual si está
+                // en la lista blanca (coincidencia exacta); el original queda en el log.
                 RaiseException => (
                     HttpStatusCode.BadRequest,
                     "Error de validación",
-                    pgEx.MessageText),
+                    _functionalRaiseMessages.Contains(pgEx.MessageText)
+                        ? pgEx.MessageText
+                        : GenericRaiseMessage),
                 _ => (
                     HttpStatusCode.InternalServerError,
                     "Error interno del servidor",
@@ -176,6 +220,15 @@ public class ExceptionHandlingMiddleware
         string detail,
         IDictionary<string, string[]>? errors = null)
     {
+        // S1: un error inesperado (500) no debe dejar cookies a medio escribir
+        // (p. ej. la de un refresh token cuya transacción no se confirmó). Los
+        // 400/401/403 de negocio conservan sus Set-Cookie: algunos borran la
+        // sesión a propósito (refresh revocado, cuenta inactiva).
+        if (statusCode == HttpStatusCode.InternalServerError)
+        {
+            context.Response.Headers.Remove(Microsoft.Net.Http.Headers.HeaderNames.SetCookie);
+        }
+
         context.Response.ContentType = "application/problem+json";
         context.Response.StatusCode = (int)statusCode;
 

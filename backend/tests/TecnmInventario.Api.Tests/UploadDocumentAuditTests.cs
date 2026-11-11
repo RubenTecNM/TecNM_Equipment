@@ -40,6 +40,20 @@ public class UploadDocumentAuditTests
     private static UploadDocumentCommand CreateCommand(IFormFile file)
         => new("ACQUISITION", 1, "evidencia B2", file);
 
+    // 5.5 (ST5): el dueño debe existir; cada test siembra la adquisición 1.
+    private static void SeedAcquisition(TecnmInventario.Api.Data.TecnmInventarioDbContext context)
+    {
+        context.Acquisitions.Add(new TecnmInventario.Api.Core.Entities.Acquisition
+        {
+            AcquisitionId = 1,
+            CurrencyCode = "MXN",
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            Version = 1
+        });
+        context.SaveChanges();
+    }
+
     [Fact]
     public async Task UploadDocument_guarda_archivo_y_audita_INSERT_con_storage_key_relativa()
     {
@@ -48,6 +62,7 @@ public class UploadDocumentAuditTests
         {
             var context = TestDb.Create();
             using var _ = context;
+            SeedAcquisition(context);
             var audit = new RecordingAuditLogService();
             var hooks = new TransactionHooks(NullLogger<TransactionHooks>.Instance);
             var handler = CreateHandler(context, storage, hooks, audit);
@@ -83,6 +98,7 @@ public class UploadDocumentAuditTests
         {
             var context = TestDb.Create();
             using var _ = context;
+            SeedAcquisition(context);
             var audit = new RecordingAuditLogService { FailOnLog = true };
             var hooks = new TransactionHooks(NullLogger<TransactionHooks>.Instance);
             var handler = CreateHandler(context, storage, hooks, audit);
@@ -118,6 +134,7 @@ public class UploadDocumentAuditTests
     {
         var context = TestDb.Create();
         using var _ = context;
+        SeedAcquisition(context);
         var audit = new RecordingAuditLogService { FailOnLog = true };
         var logger = new RecordingLogger<TransactionHooks>();
         var hooks = new TransactionHooks(logger);

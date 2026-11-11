@@ -71,7 +71,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
 
         await using var contextBorrado = db.CreateContext();
         var handlerBorrado = new LoginHandler(
-            contextBorrado, new FakeAuthSessionIssuer(), NullLogger<LoginHandler>.Instance);
+            contextBorrado, new FakeAuthSessionIssuer(), TestLoginAttempts.Create(), NullLogger<LoginHandler>.Instance);
 
         var exBorrado = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             handlerBorrado.Handle(
@@ -79,7 +79,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
 
         await using var contextContrasenaIncorrecta = db.CreateContext();
         var handlerContrasenaIncorrecta = new LoginHandler(
-            contextContrasenaIncorrecta, new FakeAuthSessionIssuer(), NullLogger<LoginHandler>.Instance);
+            contextContrasenaIncorrecta, new FakeAuthSessionIssuer(), TestLoginAttempts.Create(), NullLogger<LoginHandler>.Instance);
 
         var exContrasenaIncorrecta = await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             handlerContrasenaIncorrecta.Handle(
@@ -123,6 +123,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
             context,
             new FakeAuthSessionIssuer(),
             new FakeAuthCookieWriter(rawToken),
+            Options.Create(new AuthOptions()),
             NullLogger<RefreshSessionHandler>.Instance);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
@@ -189,7 +190,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
 
         await using var context = db.CreateContext();
         var handler = new LoginHandler(
-            context, new FakeAuthSessionIssuer(allowIssue: true), NullLogger<LoginHandler>.Instance);
+            context, new FakeAuthSessionIssuer(allowIssue: true), TestLoginAttempts.Create(), NullLogger<LoginHandler>.Instance);
 
         // H1: el login no comprueba el rol -> autentica con credenciales correctas
         // aunque su rol esté borrado lógicamente (consecuencia aceptada de H1).
@@ -482,7 +483,7 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
             var profile = new AuthUserResponse(
                 user.UserId, user.Username, user.Email, user.FirstName, user.LastName,
                 user.Role.Code, user.Role.Name, []);
-            return Task.FromResult(new IssuedSession(new RefreshToken { UserId = user.UserId }, profile));
+            return Task.FromResult(new IssuedSession(new RefreshToken { UserId = user.UserId }, profile, new SessionTokens("", DateTime.UtcNow, "", DateTime.UtcNow)));
         }
 
         public Task<AuthUserResponse> BuildProfileAsync(AppUser user, CancellationToken cancellationToken)
@@ -497,6 +498,9 @@ public sealed class Fase4d1UsuariosRolesReproTests : PostgresTestBase
                 user.UserId, user.Username, user.Email, user.FirstName, user.LastName,
                 user.Role.Code, user.Role.Name, []));
         }
+
+        // Sin cookies reales: los tests no firman ni envían tokens.
+        public void WriteCookies(IssuedSession session) { }
     }
 
     private sealed class FakeAuthCookieWriter : IAuthCookieWriter

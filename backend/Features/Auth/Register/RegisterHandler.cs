@@ -32,8 +32,9 @@ public sealed class RegisterHandler : ICommandHandler<RegisterCommand, RegisterR
 
         var user = new AppUser
         {
-            Username = command.Username,
-            Email = command.Email,
+            // N1: se guardan normalizados; login y vinculación comparan en minúsculas.
+            Username = RegisterValidator.Normalize(command.Username),
+            Email = RegisterValidator.Normalize(command.Email),
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(command.Password),
             FirstName = command.FirstName,
             LastName = command.LastName,

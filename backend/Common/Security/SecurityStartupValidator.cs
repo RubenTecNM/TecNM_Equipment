@@ -29,10 +29,11 @@ public static class SecurityStartupValidator
         "example-secret"
     };
 
-    public static void Validate(string? jwtSecret, bool isDevelopment, bool cookieSecure)
+    public static void Validate(string? jwtSecret, bool isDevelopment, bool cookieSecure, AuthOptions? authOptions = null)
     {
         ValidateJwtSecret(jwtSecret);
         ValidateCookieSecure(isDevelopment, cookieSecure);
+        ValidateExternalProviders(isDevelopment, authOptions ?? new AuthOptions());
     }
 
     public static void ValidateJwtSecret(string? jwtSecret)
@@ -63,6 +64,77 @@ public static class SecurityStartupValidator
             throw new InvalidOperationException(
                 $"Jwt:Secret es demasiado corto: se requieren al menos {MinimumJwtSecretBytes} bytes UTF-8 " +
                 "(256 bits). Genera uno nuevo con: openssl rand -base64 48");
+        }
+    }
+
+    /// <summary>
+    /// Tenants de Entra que aceptan cuentas de cualquier organización (o
+    /// personales): con ellos la Authority no restringe quién inicia sesión.
+    /// </summary>
+    public static readonly IReadOnlyList<string> MultiTenantEntraIds = new[]
+    {
+        "common",
+        "organizations",
+        "consumers"
+    };
+
+    /// <summary>
+    /// Fuera de Development, un proveedor federado configurado (con ClientId)
+    /// debe estar restringido a la institución. Sin ClientId no se exige nada.
+    /// </summary>
+    public static void ValidateExternalProviders(bool isDevelopment, AuthOptions authOptions)
+    {
+        if (isDevelopment)
+        {
+            return;
+        }
+
+        if (authOptions.Entra.IsConfigured)
+        {
+            var tenant = authOptions.Entra.TenantId.Trim();
+            if (MultiTenantEntraIds.Any(t => string.Equals(t, tenant, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException(
+                    $"Auth:Entra:TenantId no puede ser '{tenant}' fuera de Development: " +
+                    "aceptaría cuentas de otras organizaciones. Usa el Id del tenant institucional.");
+            }
+
+            if (!authOptions.AllowedEmailDomains.Any(d => !string.IsNullOrWhiteSpace(d)))
+            {
+                throw new InvalidOperationException(
+                    "Auth:AllowedEmailDomains está vacío y Microsoft/Entra está configurado: " +
+                    "define los dominios de correo institucionales (Auth__AllowedEmailDomains__0=...).");
+            }
+        }
+
+        if (authOptions.Google.IsConfigured && string.IsNullOrWhiteSpace(authOptions.Google.HostedDomain))
+        {
+            throw new InvalidOperationException(
+                "Auth:Google:HostedDomain está vacío y Google está configurado: " +
+                "aceptaría cualquier cuenta de Google. Define el dominio de Google Workspace.");
+        }
+    }
+
+    /// <summary>
+    /// Fuera de Development, AllowedHosts debe listar los nombres reales del
+    /// servidor: con "*" (o vacío) se acepta cualquier cabecera Host, y el
+    /// login federado arma la redirect_uri con ella.
+    /// </summary>
+    public static void ValidateAllowedHosts(bool isDevelopment, string? allowedHosts)
+    {
+        if (isDevelopment)
+        {
+            return;
+        }
+
+        var hosts = (allowedHosts ?? string.Empty)
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (hosts.Length == 0 || hosts.Contains("*"))
+        {
+            throw new InvalidOperationException(
+                "AllowedHosts no puede ser '*' ni estar vacío fuera de Development: " +
+                "define los nombres del servidor separados por ';' (variable de entorno AllowedHosts).");
         }
     }
 

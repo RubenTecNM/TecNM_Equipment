@@ -1,5 +1,6 @@
 using Mediator;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TecnmInventario.Api.Common.Storage;
 using TecnmInventario.Api.Data;
 
@@ -10,15 +11,18 @@ public sealed class DownloadDocumentHandler : IQueryHandler<DownloadDocumentQuer
     private readonly TecnmInventarioDbContext _context;
     private readonly IFileStorageService _fileStorage;
     private readonly IDocumentAccessAuthorizer _accessAuthorizer;
+    private readonly ILogger<DownloadDocumentHandler> _logger;
 
     public DownloadDocumentHandler(
         TecnmInventarioDbContext context,
         IFileStorageService fileStorage,
-        IDocumentAccessAuthorizer accessAuthorizer)
+        IDocumentAccessAuthorizer accessAuthorizer,
+        ILogger<DownloadDocumentHandler> logger)
     {
         _context = context;
         _fileStorage = fileStorage;
         _accessAuthorizer = accessAuthorizer;
+        _logger = logger;
     }
 
     public async ValueTask<DownloadDocumentResult> Handle(
@@ -34,8 +38,29 @@ public sealed class DownloadDocumentHandler : IQueryHandler<DownloadDocumentQuer
 
         await _accessAuthorizer.EnsureAuthorizedAsync(document.OwnerType, cancellationToken);
 
-        var stream = await _fileStorage.OpenReadAsync(document.StorageKey, cancellationToken);
+        // ST2: registro existente pero archivo físico ausente, o clave que no
+        // resuelve dentro de la raíz (traversal, enlace simbólico): 404 con
+        // mensaje fijo. El log lleva el document_id y el tipo de fallo, NUNCA
+        // rutas absolutas ni la clave de almacenamiento.
+        Stream stream;
+        try
+        {
+            stream = await _fileStorage.OpenReadAsync(document.StorageKey, cancellationToken);
+        }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException or StoragePathException)
+        {
+            _logger.LogError(
+                "Descarga imposible para el documento {DocumentId}: {Reason}",
+                document.DocumentId, ex.GetType().Name);
+            throw new KeyNotFoundException("El archivo no está disponible.");
+        }
 
-        return new DownloadDocumentResult(stream, document.FileName, document.MimeType);
+        // R3b: el nombre de Content-Disposition pasa SIEMPRE por la misma
+        // sanitización que en la subida, también para documentos antiguos cuyo
+        // file_name se guardó crudo (con separadores o ".."). La extensión de
+        // respaldo sale de la clave de almacenamiento (GUID + extensión).
+        var downloadName = DocumentFileNames.Sanitize(document.FileName, Path.GetExtension(document.StorageKey));
+
+        return new DownloadDocumentResult(stream, downloadName, document.MimeType);
     }
 }
