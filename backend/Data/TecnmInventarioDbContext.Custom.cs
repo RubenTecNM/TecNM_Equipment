@@ -116,6 +116,40 @@ public partial class TecnmInventarioDbContext
                 .OnDelete(DeleteBehavior.ClientSetNull);
         });
 
+        // Columnas de scripts/add-maintenance-workflow.sql. MaintenanceRecord es una
+        // entidad generada: sus propiedades nuevas viven en Core/Entities/Extensions
+        // (partial) y se mapean aquí, sin tocar el archivo generado (regla 8).
+        // Las FK son NULL (no entran en el guardián de relaciones requeridas).
+        modelBuilder.Entity<MaintenanceRecord>(entity =>
+        {
+            entity.Property(e => e.Status)
+                .HasMaxLength(20)
+                .HasDefaultValue("PROGRAMADO")
+                .HasColumnName("status");
+            entity.Property(e => e.StartedAt).HasColumnName("started_at");
+            entity.Property(e => e.IncidentId).HasColumnName("incident_id");
+            entity.Property(e => e.Cost).HasPrecision(14, 2).HasColumnName("cost");
+            entity.Property(e => e.StatusBeforeId).HasColumnName("status_before_id");
+            entity.Property(e => e.StatusAfterId).HasColumnName("status_after_id");
+            entity.Property(e => e.CancelledAt).HasColumnName("cancelled_at");
+            entity.Property(e => e.CancellationReason).HasMaxLength(500).HasColumnName("cancellation_reason");
+
+            entity.HasOne(e => e.Incident).WithMany()
+                .HasForeignKey(e => e.IncidentId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_maintenance_records_incident");
+
+            entity.HasOne(e => e.StatusBefore).WithMany()
+                .HasForeignKey(e => e.StatusBeforeId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_maintenance_records_status_before");
+
+            entity.HasOne(e => e.StatusAfter).WithMany()
+                .HasForeignKey(e => e.StatusAfterId)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("fk_maintenance_records_status_after");
+        });
+
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             var versionProp = entityType.FindProperty("Version");
