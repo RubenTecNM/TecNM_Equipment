@@ -263,6 +263,68 @@ public sealed class MaintenanceEnv : IAsyncDisposable
                     "SELECT assignment_type_id FROM inventario.assignment_types WHERE code = 'PERSONAL'")
             });
 
+    // ── Consultas (M.4) ────────────────────────────────────────────────────
+
+    private static string Ts(string? value) => value is null ? "NULL" : $"'{value}'::timestamptz";
+    private static string Txt(string? value) => value is null ? "NULL" : $"'{value.Replace("'", "''")}'";
+
+    /// <summary>Inserta un registro por SQL con las fechas indicadas (ISO 8601 UTC).</summary>
+    public Task<long> InsertRecordAsync(
+        long assetId,
+        string status,
+        string? scheduledAt = null,
+        string? startedAt = null,
+        string? performedAt = null,
+        string? nextAt = null,
+        string typeCode = "PREVENTIVO",
+        string? description = null,
+        long? incidentId = null,
+        long? performedBy = null,
+        string? cancelledAt = null,
+        string? reason = null,
+        decimal? cost = null,
+        string? partsUsed = null,
+        string? statusBefore = null,
+        string? statusAfter = null,
+        bool deleted = false)
+        => Db.ScalarAsync<long>($"""
+            INSERT INTO inventario.maintenance_records
+                (asset_id, maintenance_type_id, status, scheduled_at, started_at, performed_at, next_maintenance_at,
+                 description, incident_id, performed_by, cancelled_at, cancellation_reason, cost, parts_used,
+                 status_before_id, status_after_id, is_deleted, deleted_at, created_by)
+            VALUES ({assetId},
+                (SELECT maintenance_type_id FROM inventario.maintenance_types WHERE code = '{typeCode}'),
+                '{status}', {Ts(scheduledAt)}, {Ts(startedAt)}, {Ts(performedAt)}, {Ts(nextAt)},
+                {Txt(description)}, {(incidentId?.ToString() ?? "NULL")}, {(performedBy?.ToString() ?? "NULL")},
+                {Ts(cancelledAt)}, {Txt(reason)}, {(cost?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "NULL")}, {Txt(partsUsed)},
+                {(statusBefore is null ? "NULL" : $"(SELECT asset_status_id FROM inventario.asset_statuses WHERE code = '{statusBefore}')")},
+                {(statusAfter is null ? "NULL" : $"(SELECT asset_status_id FROM inventario.asset_statuses WHERE code = '{statusAfter}')")},
+                {(deleted ? "true" : "false")}, {(deleted ? "now()" : "NULL")}, {AdminId})
+            RETURNING maintenance_record_id
+            """);
+
+    public Task SetAssetAsync(long assetId, string setClause)
+        => Db.ExecuteAsync($"UPDATE inventario.assets SET {setClause} WHERE asset_id = {assetId}");
+
+    public Task<long> TypeIdAsync(string code)
+        => Db.ScalarAsync<long>($"SELECT maintenance_type_id FROM inventario.maintenance_types WHERE code = '{code}'");
+
+    public async Task<(HttpStatusCode Status, JsonElement Body, string Raw)> GetAsync(string path, string? token = null)
+    {
+        var response = await SendAsync(HttpMethod.Get, path, null, token);
+        var raw = await response.Content.ReadAsStringAsync();
+        JsonElement body = default;
+        if (raw.Length > 0 && (raw.TrimStart().StartsWith('{') || raw.TrimStart().StartsWith('[')))
+        {
+            body = JsonDocument.Parse(raw).RootElement.Clone();
+        }
+
+        return (response.StatusCode, body, raw);
+    }
+
+    public static long[] Ids(JsonElement array)
+        => array.EnumerateArray().Select(i => i.GetProperty("maintenanceRecordId").GetInt64()).ToArray();
+
     public static async Task<JsonElement> ReadAsync(HttpResponseMessage response)
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
 

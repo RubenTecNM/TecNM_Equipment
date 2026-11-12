@@ -2,7 +2,12 @@ using Mediator;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TecnmInventario.Api.Features.Maintenance.CancelMaintenance;
+using TecnmInventario.Api.Common.Pagination;
 using TecnmInventario.Api.Features.Maintenance.CompleteMaintenance;
+using TecnmInventario.Api.Features.Maintenance.GetMaintenance;
+using TecnmInventario.Api.Features.Maintenance.GetMaintenanceById;
+using TecnmInventario.Api.Features.Maintenance.GetMaintenanceSchedule;
+using TecnmInventario.Api.Features.Maintenance.GetMaintenanceTechnicians;
 using TecnmInventario.Api.Features.Maintenance.ScheduleMaintenance;
 using TecnmInventario.Api.Features.Maintenance.Shared;
 using TecnmInventario.Api.Features.Maintenance.StartDirectMaintenance;
@@ -13,7 +18,7 @@ namespace TecnmInventario.Api.Features.Maintenance;
 /// <summary>
 /// Flujo programar -> iniciar -> cerrar/cancelar. Solo despacha a IMediator.
 /// Todas las escrituras exigen maintenance.manage (política por permiso, regla 21).
-/// Las consultas (listado y detalle, maintenance.view) llegan en M.4.
+/// Las consultas exigen maintenance.view (la de técnicos, maintenance.manage).
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
@@ -25,6 +30,52 @@ public class MaintenanceController : ControllerBase
     {
         _mediator = mediator;
     }
+
+    public sealed record MaintenanceFilters(
+        long? AssetId,
+        string[]? Status,
+        long? MaintenanceTypeId,
+        long? PerformedBy,
+        DateTime? From,
+        DateTime? To,
+        string? Search,
+        bool? OnlyOpen);
+
+    [HttpGet]
+    [Authorize(Policy = MaintenancePermissions.View)]
+    public async Task<ActionResult<PagedResult<MaintenanceListItem>>> GetMaintenance(
+        [FromQuery] PagedRequest pagination,
+        [FromQuery] MaintenanceFilters filters,
+        CancellationToken cancellationToken)
+    {
+        var query = new GetMaintenanceQuery(
+            pagination.PageNumber, pagination.PageSize, filters.AssetId, filters.Status,
+            filters.MaintenanceTypeId, filters.PerformedBy, filters.From, filters.To,
+            filters.Search, filters.OnlyOpen);
+
+        return Ok(await _mediator.Send(query, cancellationToken));
+    }
+
+    // Las rutas literales (schedule, technicians) no chocan con {maintenanceId:long}.
+    [HttpGet("schedule")]
+    [Authorize(Policy = MaintenancePermissions.View)]
+    public async Task<ActionResult<GetMaintenanceScheduleResponse>> GetSchedule(
+        [FromQuery] int? days,
+        CancellationToken cancellationToken)
+        => Ok(await _mediator.Send(new GetMaintenanceScheduleQuery(days), cancellationToken));
+
+    [HttpGet("technicians")]
+    [Authorize(Policy = MaintenancePermissions.Manage)]
+    public async Task<ActionResult<IReadOnlyList<MaintenanceTechnicianResponse>>> GetTechnicians(
+        CancellationToken cancellationToken)
+        => Ok(await _mediator.Send(new GetMaintenanceTechniciansQuery(), cancellationToken));
+
+    [HttpGet("{maintenanceId:long}")]
+    [Authorize(Policy = MaintenancePermissions.View)]
+    public async Task<ActionResult<GetMaintenanceByIdResponse>> GetMaintenanceById(
+        long maintenanceId,
+        CancellationToken cancellationToken)
+        => Ok(await _mediator.Send(new GetMaintenanceByIdQuery(maintenanceId), cancellationToken));
 
     [HttpPost]
     [Authorize(Policy = MaintenancePermissions.Manage)]
