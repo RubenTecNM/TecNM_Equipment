@@ -152,7 +152,9 @@ public sealed class PostgresContainerFixture : IAsyncLifetime
         "seed-users-view-permission.sql",
         "add-auth-sessions.sql",
         "add-users-manage-permission.sql",
-        "add-app-users-lower-indexes.sql"
+        "add-app-users-lower-indexes.sql",
+        "add-maintenance-workflow.sql",
+        "add-maintenance-permissions.sql"
     };
 
     private readonly SemaphoreSlim _gate = new(1, 1);

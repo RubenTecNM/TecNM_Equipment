@@ -411,9 +411,11 @@ public sealed class Fase56SeguridadTests : PostgresTestBase
                 WHERE it.code = 'HARDWARE' AND ip.code = 'ALTA' AND ist.code = 'ABIERTO'
                 RETURNING incident_id
                 """);
+            // M.1: sin status explícito el registro queda PROGRAMADO, y el CHECK
+            // ck_maintenance_records_programado exige scheduled_at.
             MaintenanceId = await Db.ScalarAsync<long>($"""
-                INSERT INTO inventario.maintenance_records (asset_id, maintenance_type_id, created_by)
-                SELECT {AssetId}, maintenance_type_id, {adminId}
+                INSERT INTO inventario.maintenance_records (asset_id, maintenance_type_id, created_by, scheduled_at)
+                SELECT {AssetId}, maintenance_type_id, {adminId}, now()
                 FROM inventario.maintenance_types WHERE code = 'PREVENTIVO'
                 RETURNING maintenance_record_id
                 """);

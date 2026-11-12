@@ -17,7 +17,10 @@ public class ExceptionHandlingMiddleware
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["ux_app_users_username_lower"] = "Ya existe un usuario con ese nombre.",
-            ["ux_app_users_email_lower"] = "Ya existe un usuario con ese correo."
+            ["ux_app_users_email_lower"] = "Ya existe un usuario con ese correo.",
+            // M.2: respaldo del "un solo mantenimiento EN_CURSO por activo" (el handler
+            // lo comprueba antes, con el activo bloqueado; esto cubre una carrera real).
+            ["ux_maintenance_one_in_progress"] = "El activo ya tiene un mantenimiento en curso."
         };
     private const string ForeignKeyViolation = "23503";
     private const string CheckViolation = "23514";

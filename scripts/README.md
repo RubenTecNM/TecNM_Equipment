@@ -17,6 +17,8 @@ psql "$DATABASE_URL" -f seed-users-view-permission.sql   # permiso users.view (s
 psql "$DATABASE_URL" -f add-auth-sessions.sql      # refresh_tokens + user_external_logins (cookies HttpOnly, login federado)
 psql "$DATABASE_URL" -f add-users-manage-permission.sql   # permiso users.manage (alta de usuarios)
 psql "$DATABASE_URL" -f add-app-users-lower-indexes.sql   # unicidad de username y email sin distinguir mayúsculas
+psql "$DATABASE_URL" -f add-maintenance-workflow.sql   # mantenimiento: estado, inicio, incidente, costo, cancelación, CHECK e índices
+psql "$DATABASE_URL" -f add-maintenance-permissions.sql   # permisos maintenance.view y maintenance.delete (y asignaciones de maintenance.manage)
 psql "$DATABASE_URL" -f seed-locations-demo.sql  # OPCIONAL, solo desarrollo: árbol de ejemplo (Edificio B)
 psql "$DATABASE_URL" -v hash="$HASH" -f seed-test-users.sql   # OPCIONAL, solo desarrollo: usuarios de prueba RBAC (el hash se pasa por variable, no vive en el repo)
 ```
@@ -32,6 +34,8 @@ psql "$DATABASE_URL" -v hash="$HASH" -f seed-test-users.sql   # OPCIONAL, solo d
 | `add-auth-sessions.sql` | Tablas `refresh_tokens` (solo hash SHA-256, rotación por familia) y `user_external_logins` (vínculo Entra/Google por `subject`) |
 | `add-users-manage-permission.sql` | Permiso `users.manage` (POST /api/auth/register; asignado a ADMIN) |
 | `add-app-users-lower-indexes.sql` | Índices únicos `ux_app_users_username_lower` y `ux_app_users_email_lower` sobre `lower(...)` de `app_users`; no quita los UNIQUE existentes; falla (sin cambios) si ya hay duplicados por mayúsculas |
+| `add-maintenance-workflow.sql` | Amplía `maintenance_records`: `status` (PROGRAMADO/EN_CURSO/COMPLETADO/CANCELADO), `started_at`, `incident_id`, `cost`, `status_before_id`/`status_after_id`, `cancelled_at`, `cancellation_reason`; CHECK `ck_maintenance_records_*`, índice único parcial de un solo EN_CURSO por activo e índice por estado y fecha. Rellena las filas antiguas solo la primera vez (un bloque `DO` atómico); no re-escribe estados al repetirlo |
+| `add-maintenance-permissions.sql` | Permisos `maintenance.view` (ADMIN, TECNICO, RESPONSABLE_AREA) y `maintenance.delete` (ADMIN); asegura `maintenance.manage` para ADMIN y TECNICO |
 | `seed-locations-demo.sql` | **Opcional, solo desarrollo:** árbol de ejemplo (Edificio B → Plantas → Laboratorios/Oficinas → Rack); idempotente por `code`, no toca ED-A ni PRUEBA-LAB |
 | `seed-test-users.sql` | **Opcional, solo desarrollo:** usuarios `test_responsable` (RESPONSABLE_AREA) y `test_usuario` (USUARIO_GENERAL); idempotente por username; exige `-v hash=...` |
 

@@ -42,6 +42,8 @@
     <Content Include="..\..\..\scripts\add-auth-sessions.sql" Link="Sql\add-auth-sessions.sql" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\..\scripts\add-users-manage-permission.sql" Link="Sql\add-users-manage-permission.sql" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\..\scripts\add-app-users-lower-indexes.sql" Link="Sql\add-app-users-lower-indexes.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\add-maintenance-workflow.sql" Link="Sql\add-maintenance-workflow.sql" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\scripts\add-maintenance-permissions.sql" Link="Sql\add-maintenance-permissions.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

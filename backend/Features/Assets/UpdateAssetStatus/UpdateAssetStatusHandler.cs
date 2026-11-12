@@ -6,6 +6,7 @@ using TecnmInventario.Api.Common.Errors;
 using TecnmInventario.Api.Common.Persistence;
 using TecnmInventario.Api.Common.Security;
 using TecnmInventario.Api.Data;
+using TecnmInventario.Api.Features.Maintenance.Shared;
 
 namespace TecnmInventario.Api.Features.Assets.UpdateAssetStatus;
 
@@ -58,6 +59,35 @@ public sealed class UpdateAssetStatusHandler : ICommandHandler<UpdateAssetStatus
                 "El activo fue modificado por otro usuario mientras tanto.");
         }
 
+        // M.3 (I3): con un mantenimiento EN_CURSO el activo no puede salir de
+        // EN_MANTENIMIENTO hacia DISPONIBLE/ASIGNADO por aquí; hay que cerrar o
+        // cancelar el mantenimiento. Va DESPUÉS del lock (regla 19). Sin registro
+        // EN_CURSO (EN_MANTENIMIENTO por un incidente o a mano) sigue permitido.
+        var maintenanceInProgress = await _context.MaintenanceRecords.AnyAsync(
+            m => m.AssetId == asset.AssetId && m.Status == MaintenanceStatusCodes.EnCurso && !m.IsDeleted,
+            cancellationToken);
+
+        if (maintenanceInProgress
+            && lockedAsset.AssetStatusCode == AssetStatusCodes.EnMantenimiento
+            && command.NewStatusCode is AssetStatusCodes.Disponible or AssetStatusCodes.Asignado)
+        {
+            throw new BusinessRuleViolationException(
+                "El activo tiene un mantenimiento en curso. Ciérralo o cancélalo primero.");
+        }
+
+        // M.3 (I4): la baja exige que no haya mantenimiento EN_CURSO; los
+        // PROGRAMADOS se cancelan en esta misma transacción, antes de la baja.
+        if (command.NewStatusCode == AssetStatusCodes.DadoDeBaja)
+        {
+            if (maintenanceInProgress)
+            {
+                throw new BusinessRuleViolationException(
+                    "El activo tiene un mantenimiento en curso. Ciérralo o cancélalo antes de darlo de baja.");
+            }
+
+            await CancelScheduledMaintenanceAsync(asset.AssetId, cancellationToken);
+        }
+
         // Un activo con incidentes abiertos no puede volver a circular. Sin esta
         // regla se podría pasar a DISPONIBLE/ASIGNADO por este endpoint (via
         // EN_MANTENIMIENTO) con una falla todavía sin resolver. DADO_DE_BAJA queda
@@ -96,5 +126,48 @@ public sealed class UpdateAssetStatusHandler : ICommandHandler<UpdateAssetStatus
         await transaction.CommitAsync(cancellationToken);
 
         return new UpdateAssetStatusResponse(asset.AssetId, command.NewStatusCode, asset.Version);
+    }
+
+    /// <summary>
+    /// Cancela todos los mantenimientos PROGRAMADOS del activo (con el activo ya
+    /// bloqueado: el activo es siempre el primer lock) y audita cada uno.
+    /// </summary>
+    private async Task CancelScheduledMaintenanceAsync(long assetId, CancellationToken cancellationToken)
+    {
+        var scheduled = await _context.MaintenanceRecords
+            .Where(m => m.AssetId == assetId && m.Status == MaintenanceStatusCodes.Programado && !m.IsDeleted)
+            .OrderBy(m => m.MaintenanceRecordId)
+            .ToListAsync(cancellationToken);
+
+        foreach (var record in scheduled)
+        {
+            record.Status = MaintenanceStatusCodes.Cancelado;
+            record.CancelledAt = DateTime.UtcNow;
+            record.CancellationReason = "Cancelado por baja del activo.";
+            record.UpdatedBy = _currentUser.UserId;
+        }
+
+        if (scheduled.Count == 0)
+        {
+            return;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        foreach (var record in scheduled)
+        {
+            await _auditLog.LogAsync(
+                tableName: "maintenance_records",
+                recordId: record.MaintenanceRecordId,
+                action: "UPDATE",
+                oldData: new { Status = MaintenanceStatusCodes.Programado },
+                newData: new
+                {
+                    Status = MaintenanceStatusCodes.Cancelado,
+                    record.CancelledAt,
+                    record.CancellationReason
+                },
+                cancellationToken);
+        }
     }
 }
