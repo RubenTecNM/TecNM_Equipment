@@ -17,8 +17,9 @@ public abstract class MaintenanceTestBase : PostgresTestBase
     protected MaintenanceTestBase(PostgresContainerFixture fixture)
         : base(fixture) { }
 
-    protected async Task<MaintenanceEnv> CreateEnvAsync(Action<IServiceCollection>? configureTestServices = null)
-        => await MaintenanceEnv.CreateAsync(await CreateDatabaseAsync(), configureTestServices);
+    protected async Task<MaintenanceEnv> CreateEnvAsync(
+        Action<IServiceCollection>? configureTestServices = null, bool isolatedStorage = false)
+        => await MaintenanceEnv.CreateAsync(await CreateDatabaseAsync(), configureTestServices, isolatedStorage);
 }
 
 public sealed class MaintenanceEnv : IAsyncDisposable
@@ -41,11 +42,27 @@ public sealed class MaintenanceEnv : IAsyncDisposable
     public long AdminId { get; private set; }
     public long TypeId { get; private set; }
 
+    public string? StorageRoot { get; private set; }
+    private string? _tempDir;
+
     public static async Task<MaintenanceEnv> CreateAsync(
-        PostgresDatabase db, Action<IServiceCollection>? configureTestServices)
+        PostgresDatabase db, Action<IServiceCollection>? configureTestServices, bool isolatedStorage = false)
     {
-        var factory = new ApiFactory(db.ConnectionString, configureTestServices: configureTestServices);
-        var env = new MaintenanceEnv(db, factory, Fase52PerimetroTests.NewClient(factory));
+        // Storage temporal propio del test (nunca la carpeta real de documentos).
+        string? tempDir = null;
+        Dictionary<string, string?>? overrides = null;
+        if (isolatedStorage)
+        {
+            tempDir = Path.Combine(Path.GetTempPath(), "tecnm-m5-" + Guid.NewGuid().ToString("N"));
+            overrides = new Dictionary<string, string?> { ["Storage:LocalPath"] = Path.Combine(tempDir, "storage") };
+        }
+
+        var factory = new ApiFactory(db.ConnectionString, overrides, configureTestServices: configureTestServices);
+        var env = new MaintenanceEnv(db, factory, Fase52PerimetroTests.NewClient(factory))
+        {
+            _tempDir = tempDir,
+            StorageRoot = tempDir is null ? null : Path.Combine(tempDir, "storage")
+        };
         (env.AdminToken, env.AdminId) = await env.CreateUserAsync("m2_admin", "ADMIN");
         env.TypeId = await db.ScalarAsync<long>(
             "SELECT maintenance_type_id FROM inventario.maintenance_types WHERE code = 'PREVENTIVO'");
@@ -325,6 +342,39 @@ public sealed class MaintenanceEnv : IAsyncDisposable
     public static long[] Ids(JsonElement array)
         => array.EnumerateArray().Select(i => i.GetProperty("maintenanceRecordId").GetInt64()).ToArray();
 
+    // ── Edición, borrado y documentos (M.5) ────────────────────────────────
+
+    public Task<HttpResponseMessage> UpdateAsync(long recordId, object body, string? token = null)
+        => SendAsync(HttpMethod.Put, $"/api/maintenance/{recordId}", body, token);
+
+    public Task<HttpResponseMessage> DeleteAsync(long recordId, int expectedVersion, string? token = null)
+        => SendAsync(HttpMethod.Delete, $"/api/maintenance/{recordId}?expectedVersion={expectedVersion}", null, token);
+
+    public Task<HttpResponseMessage> UploadDocumentAsync(
+        byte[] bytes, string fileName, string contentType, long ownerId, string ownerType = "MAINTENANCE", string? token = null)
+    {
+        var form = new MultipartFormDataContent();
+        form.Add(new StringContent(ownerType), "ownerType");
+        form.Add(new StringContent(ownerId.ToString()), "ownerId");
+        var file = new ByteArrayContent(bytes);
+        file.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
+        form.Add(file, "file", fileName);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/documents") { Content = form };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token ?? AdminToken);
+        return Client.SendAsync(request);
+    }
+
+    public Task<HttpResponseMessage> DownloadDocumentAsync(long documentId, string? token = null)
+        => SendAsync(HttpMethod.Get, $"/api/documents/{documentId}/download", null, token);
+
+    /// <summary>Valor guardado de una columna timestamptz, en ISO 8601 UTC (para reenviarlo idéntico).</summary>
+    public Task<string> IsoAsync(long recordId, string column)
+        => Db.ScalarAsync<string>($"""
+            SELECT to_char({column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+            FROM inventario.maintenance_records WHERE maintenance_record_id = {recordId}
+            """);
+
     public static async Task<JsonElement> ReadAsync(HttpResponseMessage response)
         => JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.Clone();
 
@@ -340,5 +390,9 @@ public sealed class MaintenanceEnv : IAsyncDisposable
         Client.Dispose();
         await _factory.DisposeAsync();
         await Db.DisposeAsync();
+        if (_tempDir is not null && Directory.Exists(_tempDir))
+        {
+            Directory.Delete(_tempDir, recursive: true);
+        }
     }
 }
